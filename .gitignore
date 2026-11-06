@@ -1,0 +1,24 @@
+# Dépendances
+node_modules/
+
+# Builds
+dist/
+coverage/
+
+# Variables d'environnement (les modèles restent versionnés)
+.env
+.env.*
+!*.env.example
+
+# Bases SQLite et fichiers WAL
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+
+# Système et éditeurs
+.DS_Store
+.vscode/
+.idea/

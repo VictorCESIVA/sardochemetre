@@ -1,0 +1,53 @@
+╔════════════════════════════════════════════════════════╗
+║                                                        ║
+║         🧢 SARDOCHEMÈTRE — DÉMARRAGE RAPIDE            ║
+║                                                        ║
+╚════════════════════════════════════════════════════════╝
+
+📦 Ton projet est PRÊT À L'EMPLOI !
+
+┌────────────────────────────────────────────────────────┐
+│  ÉTAPE 1 : Lance le site                               │
+└────────────────────────────────────────────────────────┘
+
+    ./start-all.sh
+
+┌────────────────────────────────────────────────────────┐
+│  ÉTAPE 2 : Ouvre ton navigateur                        │
+└────────────────────────────────────────────────────────┘
+
+    http://localhost:5173
+
+┌────────────────────────────────────────────────────────┐
+│  ÉTAPE 3 : Active le mode Backend                      │
+└────────────────────────────────────────────────────────┘
+
+    1. Clique sur le toggle en haut à droite
+    2. Passe de "🆓 Gratuit" à "🔑 API"
+    3. Le site chargera les analyses du backend !
+
+┌────────────────────────────────────────────────────────┐
+│  ✅ C'EST PRÊT !                                       │
+└────────────────────────────────────────────────────────┘
+
+Tu verras :
+  🎯 Le BullshitMètre avec le score global
+  📊 Les statistiques de la période
+  📱 8 tweets analysés avec leur verdict
+  🔥 Les punchlines satiriques de l'IA
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📖 Pour en savoir plus :
+
+  • README.md         → Documentation complète
+  • VICTOIRE.md       → Résumé de tout ce qui marche
+  • BACKEND_READY.md  → Infos sur le backend
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🛑 Pour arrêter : Ctrl+C dans le terminal du start-all.sh
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Bon bullshit-checking ! 🧢

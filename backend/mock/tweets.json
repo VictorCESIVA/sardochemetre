@@ -1,0 +1,140 @@
+[
+  {
+    "id": "1",
+    "content": "Les NFTs vont révolutionner l'économie mondiale dans les 6 prochains mois, c'est mathématique.",
+    "posted_at": "2025-03-28T14:22:00Z",
+    "likes": 1240,
+    "retweets": 89,
+    "analysis": {
+      "bullshit_score": 94,
+      "verdict": "CHAUD BOUILLANT",
+      "reasoning": "Cette affirmation est factuellement erronée. Le marché NFT a chuté de plus de 95% depuis 2022. Aucun économiste sérieux ne soutient une telle prédiction. Le mot 'mathématique' est utilisé ici comme faux argument d'autorité.",
+      "fact_checks": [
+        {"claim": "Les NFTs vont révolutionner l'économie", "verdict": "faux", "note": "Volume NFT en chute libre depuis 2022"},
+        {"claim": "Dans les 6 prochains mois", "verdict": "invérifiable", "note": "Prédiction sans fondement"},
+        {"claim": "C'est mathématique", "verdict": "faux", "note": "Sophisme d'autorité"}
+      ],
+      "humor_comment": "C'est mathématique comme Platini est innocent : techniquement possible mais statistiquement catastrophique."
+    }
+  },
+  {
+    "id": "2",
+    "content": "J'ai mangé des pâtes au pesto ce midi, c'était pas mal.",
+    "posted_at": "2025-03-28T12:15:00Z",
+    "likes": 42,
+    "retweets": 3,
+    "analysis": {
+      "bullshit_score": 8,
+      "verdict": "VRAI",
+      "reasoning": "Affirmation purement subjective et personnelle, sans prétention à représenter une vérité objective. L'auteur partage simplement son expérience culinaire de manière honnête et modeste.",
+      "fact_checks": [
+        {"claim": "J'ai mangé des pâtes au pesto", "verdict": "invérifiable", "note": "Expérience personnelle non vérifiable mais plausible"},
+        {"claim": "C'était pas mal", "verdict": "subjectif", "note": "Opinion gustative personnelle"}
+      ],
+      "humor_comment": "Enfin du contenu vérifié sur ce réseau social. Les pâtes au pesto, ça reste plus fiable que le metaverse."
+    }
+  },
+  {
+    "id": "3",
+    "content": "Mon nouveau setup de stream coûte 15 000€. Si t'as pas minimum 10K de matos, tu peux pas percer sur Twitch en 2025.",
+    "posted_at": "2025-03-27T18:45:00Z",
+    "likes": 856,
+    "retweets": 124,
+    "analysis": {
+      "bullshit_score": 76,
+      "verdict": "BULLSHIT",
+      "reasoning": "Affirmation matérialiste qui confond corrélation et causalité. Les plus gros streamers ont commencé avec du matériel basique. Le contenu et la personnalité priment sur le matériel. Cette déclaration sert surtout à justifier des dépenses excessives.",
+      "fact_checks": [
+        {"claim": "Il faut 10K€ de matos pour percer sur Twitch", "verdict": "faux", "note": "De nombreux streamers à succès ont démarré avec moins de 500€ de matériel"},
+        {"claim": "Setup à 15 000€", "verdict": "possible", "note": "Possible mais largement excessif pour débuter"}
+      ],
+      "humor_comment": "Un setup à 15K pour stream devant 12 viewers dont 8 sont des bots. C'est le rendement d'un NFT mais sans la blockchain."
+    }
+  },
+  {
+    "id": "4",
+    "content": "Petit rappel : le Web3 n'est pas une arnaque, c'est juste que 99% des gens ne comprennent pas la technologie blockchain. DYOR.",
+    "posted_at": "2025-03-26T21:30:00Z",
+    "likes": 2140,
+    "retweets": 567,
+    "analysis": {
+      "bullshit_score": 88,
+      "verdict": "CHAUD BOUILLANT",
+      "reasoning": "Argument classique du 'vous comprenez pas'. Retourne la charge de la preuve en accusant les critiques d'incompétence. Le 'DYOR' (Do Your Own Research) est un red flag typique du marketing crypto visant à éviter toute responsabilité.",
+      "fact_checks": [
+        {"claim": "99% des gens ne comprennent pas la blockchain", "verdict": "manipulatoire", "note": "Chiffre inventé utilisé pour discréditer les critiques"},
+        {"claim": "Le Web3 n'est pas une arnaque", "verdict": "discutable", "note": "Beaucoup de projets Web3 sont des systèmes de Ponzi avérés"}
+      ],
+      "humor_comment": "DYOR : la devise universelle de ceux qui veulent te vendre un truc louche sans en assumer les conséquences. Niveau confiance, on est sur du Bernard Tapie en slip."
+    }
+  },
+  {
+    "id": "5",
+    "content": "Selon une étude récente, 73% des gamers préfèrent jouer sur PC plutôt que sur console.",
+    "posted_at": "2025-03-25T16:20:00Z",
+    "likes": 318,
+    "retweets": 67,
+    "analysis": {
+      "bullshit_score": 45,
+      "verdict": "DOUTEUX",
+      "reasoning": "Référence à 'une étude récente' sans source précise. Le chiffre de 73% est étonnamment précis pour une affirmation aussi vague. Statistique potentiellement vraie mais impossible à vérifier sans la source originale.",
+      "fact_checks": [
+        {"claim": "73% des gamers préfèrent le PC", "verdict": "invérifiable", "note": "Aucune source citée, méthodologie inconnue"},
+        {"claim": "Selon une étude récente", "verdict": "vague", "note": "Pas de référence à l'étude mentionnée"}
+      ],
+      "humor_comment": "Une étude récente... aussi récente que mes chances de voir Benzema revenir à Lyon. Cite tes sources ou retourne farmer des V-Bucks."
+    }
+  },
+  {
+    "id": "6",
+    "content": "Le drama entre Streamer X et Streamer Y ? C'est du fake pour faire du buzz, wake up people.",
+    "posted_at": "2025-03-24T22:10:00Z",
+    "likes": 1567,
+    "retweets": 423,
+    "analysis": {
+      "bullshit_score": 52,
+      "verdict": "DOUTEUX",
+      "reasoning": "Théorie du complot light. Possible que ce soit vrai (les faux dramas existent), mais affirmé avec certitude sans preuve. Le 'wake up people' est un marqueur rhétorique des théories conspirationnistes.",
+      "fact_checks": [
+        {"claim": "Le drama est fake", "verdict": "invérifiable", "note": "Aucune preuve fournie dans un sens ou dans l'autre"},
+        {"claim": "C'est pour faire du buzz", "verdict": "possible", "note": "Stratégie qui existe mais pas systématique"}
+      ],
+      "humor_comment": "Wake up people, l'expression préférée de ceux qui ont vu trois vidéos YouTube et se prennent pour des agents du FBI. Niveau crédibilité : Jérôme Cahuzac déclarant ses impôts."
+    }
+  },
+  {
+    "id": "7",
+    "content": "Je viens d'installer Linux sur mon PC, je conseille à tout le monde de faire pareil.",
+    "posted_at": "2025-03-23T14:05:00Z",
+    "likes": 234,
+    "retweets": 45,
+    "analysis": {
+      "bullshit_score": 18,
+      "verdict": "VRAI",
+      "reasoning": "Simple partage d'expérience avec recommandation. Même si la recommandation est généraliste (Linux ne convient pas à tout le monde), l'intention est honnête et basée sur une expérience réelle. Pas de fausse promesse ou d'exagération majeure.",
+      "fact_checks": [
+        {"claim": "J'ai installé Linux", "verdict": "plausible", "note": "Affirmation personnelle crédible"},
+        {"claim": "Je conseille à tout le monde", "verdict": "subjectif", "note": "Conseil personnel, pas une vérité absolue"}
+      ],
+      "humor_comment": "Conseil honnête de quelqu'un qui vient de découvrir Arch btw. C'est mignon, comme un gosse qui vient de découvrir que le Père Noël c'est Papa."
+    }
+  },
+  {
+    "id": "8",
+    "content": "Les jeux play-to-earn c'est l'avenir du gaming. Dans 2 ans, personne jouera à un jeu où tu gagnes pas de cryptos.",
+    "posted_at": "2025-03-22T19:40:00Z",
+    "likes": 3420,
+    "retweets": 891,
+    "analysis": {
+      "bullshit_score": 91,
+      "verdict": "CHAUD BOUILLANT",
+      "reasoning": "Prédiction absolutiste sur l'avenir sans fondement. Les jeux play-to-earn ont déjà montré leurs limites (Axie Infinity s'est effondré). Confusion entre jeu et travail. Aucun jeu AAA majeur n'adopte ce modèle. Affirmation qui ignore la réalité du marché.",
+      "fact_checks": [
+        {"claim": "Play-to-earn est l'avenir du gaming", "verdict": "faux", "note": "Le modèle s'est effondré, Axie Infinity a perdu 95% de ses joueurs"},
+        {"claim": "Dans 2 ans personne ne jouera sans crypto", "verdict": "faux", "note": "Les plus gros jeux (Elden Ring, Baldur's Gate 3) n'ont pas de crypto"},
+        {"claim": "C'est l'avenir", "verdict": "spéculatif", "note": "Aucune donnée ne soutient cette tendance"}
+      ],
+      "humor_comment": "Prédiction aussi fiable que Mediapro payant ses droits TV. Les gens jouent pour s'amuser, pas pour transformer leur passion en MLM dégénéré."
+    }
+  }
+]

@@ -1,0 +1,23 @@
+{
+  "name": "sardochemetre-backend",
+  "version": "1.0.0",
+  "description": "Backend API for SardocheMètre - Track Sardoche's mood from Twitter",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": ["twitter", "sentiment", "api"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "axios": "^1.7.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "express": "^4.21.0",
+    "node-cron": "^3.0.3",
+    "pg": "^8.13.0"
+  }
+}

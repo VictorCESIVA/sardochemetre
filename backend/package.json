@@ -1,0 +1,38 @@
+{
+  "name": "sardochemetre-backend",
+  "version": "1.0.0",
+  "description": "Backend API for SardocheMètre - Tweet analysis system",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test test/*.test.js",
+    "sync": "node sync-tweets.js",
+    "sync:analyze": "node sync-tweets.js --analyze --replace-demo",
+    "seed": "node init-mock-data.js",
+    "init-db": "node init-db.js",
+    "migrate": "node migrations/migrate.js",
+    "init-data": "node init-mock-data.js",
+    "test-imports": "node test-import.js"
+  },
+  "keywords": [
+    "api",
+    "tweets",
+    "analysis"
+  ],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.20.0",
+    "axios": "^1.14.0",
+    "better-sqlite3": "^12.8.0",
+    "cors": "^2.8.6",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.3",
+    "node-cron": "^4.6.0",
+    "pg": "^8.20.0"
+  }
+}
