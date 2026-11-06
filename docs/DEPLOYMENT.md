@@ -164,9 +164,13 @@ Points à vérifier :
 - `GET /api/ai/status` indique l'état de la configuration ;
 - `POST /api/ai/analyze` répond `503` si la clé manque.
 
-Les appels sont facturés selon l'offre OpenCode. Protégez les routes d'analyse par
-une authentification ou un rate limiting si le backend est public. Voir
-[`AI_MODE.md`](AI_MODE.md) pour les tarifs indicatifs.
+Les appels sont facturés selon l'offre OpenCode. Les routes d'analyse sont protégées
+par un rate limiting en mémoire (10 requêtes par IP et par minute par défaut,
+`ANALYZE_RATE_LIMIT` et `ANALYZE_RATE_WINDOW_MS`). Derrière le proxy de la plateforme,
+activez `TRUST_PROXY=1` pour que la limite s'applique par IP réelle. Le compteur est
+propre à chaque instance : ajoutez une authentification ou un limiteur partagé si le
+backend est public et multi-instance. Voir [`AI_MODE.md`](AI_MODE.md) pour les tarifs
+indicatifs.
 
 ## 5. SQLite avec disque persistant
 

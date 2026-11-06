@@ -241,7 +241,8 @@ nécessaire.
 - Ne jamais exposer de clé IA dans le frontend. Seules les variables `VITE_*`
   publiques sont autorisées ; la clé OpenCode reste côté backend.
 - Les routes `/api/ai/analyze` et `/api/tweets/analyze` utilisent une clé payante :
-  prévoir authentification ou rate limiting avant exposition publique.
+  le rate limiting en mémoire (10 req/IP/min) est actif ; une authentification reste
+  à prévoir avant une exposition publique à grande échelle.
 - Les appels Twitter/IA ne doivent pas bloquer le démarrage du serveur ni faire
   tomber le processus.
 - Le scheduler ne doit pas être dupliqué sur plusieurs instances.
