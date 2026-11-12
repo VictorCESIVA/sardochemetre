@@ -1,5 +1,7 @@
 # SardocheMètre
 
+[![CI](https://github.com/VictorCESIVA/sardochemetre/actions/workflows/ci.yml/badge.svg)](https://github.com/VictorCESIVA/sardochemetre/actions/workflows/ci.yml)
+
 Site satirique qui analyse les tweets de Sardoche et leur attribue un **score de
 bullshit de 0 à 100**, avec un verdict, une explication et des fact-checks générés
 par IA.

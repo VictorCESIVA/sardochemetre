@@ -262,6 +262,7 @@ nécessaire.
 - Frontend : **41 tests** (`vitest run`, `npm test`).
 - `npm run lint` et `npm run build` passent.
 - `npm audit` ne signale aucune vulnérabilité connue au moment de la rédaction.
+- GitHub Actions exécute les tests backend (Node 20 et 24), les tests, le lint et le build frontend sur chaque push et pull request.
 - `./test-install.sh` enchaîne tests, lint et build.
 - `./test-backend.sh` lance les tests puis des smoke tests dynamiques contre le
   backend courant : premier tweet de la liste, détail, recherche réelle, profil,
