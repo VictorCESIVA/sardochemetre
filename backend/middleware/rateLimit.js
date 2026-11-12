@@ -1,12 +1,12 @@
 'use strict';
 
 /**
- * Limitation de débit en mémoire pour les routes d'analyse payantes.
+ * Limitation de débit pour les routes d'analyse payantes.
  *
- * Les routes `POST /api/ai/analyze` et `POST /api/tweets/analyze` appellent un
- * provider facturé. Sans protection, un appelant peut épuiser les crédits.
- * Le compteur est tenu par processus et par adresse IP : il ne remplace pas
- * une authentification (voir `analysisAuth.js`), il borne l'abus et le coût.
+ * Par défaut, le compteur est tenu en mémoire par processus et par adresse IP.
+ * En multi-instance, `ANALYZE_RATE_LIMIT_SHARED=true` active un store partagé
+ * (table `analyze_rate_limits` en SQLite ou PostgreSQL), pour que la limite
+ * s'applique à l'ensemble des instances.
  */
 
 const DEFAULT_LIMIT = 10;
@@ -52,6 +52,7 @@ function clientKey(req) {
  * @param {number} [options.windowMs] Durée de la fenêtre en millisecondes.
  * @param {() => number} [options.now] Horloge injectable (tests).
  * @param {object} [options.env] Environnement alternatif (tests).
+ * @param {{consume: (input: {key: string, windowMs: number, now: number}) => Promise<{count: number, resetAt: number}>}} [options.store] Store partagé (tests/multi-instance).
  * @returns {import('express').RequestHandler}
  */
 function createRateLimiter(options = {}) {
@@ -60,6 +61,10 @@ function createRateLimiter(options = {}) {
   const limit = readPositiveInt(options.limit, defaults.limit);
   const windowMs = readPositiveInt(options.windowMs, defaults.windowMs);
   const now = typeof options.now === 'function' ? options.now : Date.now;
+  const store =
+    options.store && typeof options.store.consume === 'function'
+      ? options.store
+      : null;
 
   /** @type {Map<string, {count: number, resetAt: number}>} */
   const entries = new Map();
@@ -72,11 +77,41 @@ function createRateLimiter(options = {}) {
     lastSweepAt = at;
   }
 
-  return function rateLimit(req, res, next) {
+  function respond(res, next, count, resetAt, at) {
+    const remaining = Math.max(0, limit - count);
+    const resetSeconds = Math.max(0, Math.ceil((resetAt - at) / 1000));
+
+    res.setHeader('RateLimit-Limit', String(limit));
+    res.setHeader('RateLimit-Remaining', String(remaining));
+    res.setHeader('RateLimit-Reset', String(resetSeconds));
+
+    if (count > limit) {
+      res.setHeader('Retry-After', String(resetSeconds));
+      return res.status(429).json({
+        error: 'Trop de requêtes d’analyse. Réessayez plus tard.',
+        code: 'RATE_LIMITED',
+        retryAfter: resetSeconds,
+      });
+    }
+
+    return next();
+  }
+
+  return async function rateLimit(req, res, next) {
     // Les prévols CORS et les lectures ne sont pas facturés.
     if (req.method !== 'POST') return next();
 
     const at = now();
+    const key = clientKey(req);
+
+    if (store) {
+      try {
+        const result = await store.consume({ key, windowMs, now: at });
+        return respond(res, next, result.count, result.resetAt, at);
+      } catch (error) {
+        return next(error);
+      }
+    }
 
     if (
       entries.size >= MAX_CLEANUP_ENTRIES &&
@@ -85,7 +120,6 @@ function createRateLimiter(options = {}) {
       sweep(at);
     }
 
-    const key = clientKey(req);
     let entry = entries.get(key);
 
     if (!entry || entry.resetAt <= at) {
@@ -95,26 +129,7 @@ function createRateLimiter(options = {}) {
 
     entry.count += 1;
 
-    const remaining = Math.max(0, limit - entry.count);
-    const resetSeconds = Math.max(
-      0,
-      Math.ceil((entry.resetAt - at) / 1000)
-    );
-
-    res.setHeader('RateLimit-Limit', String(limit));
-    res.setHeader('RateLimit-Remaining', String(remaining));
-    res.setHeader('RateLimit-Reset', String(resetSeconds));
-
-    if (entry.count > limit) {
-      res.setHeader('Retry-After', String(resetSeconds));
-      return res.status(429).json({
-        error: 'Trop de requêtes d’analyse. Réessayez plus tard.',
-        code: 'RATE_LIMITED',
-        retryAfter: resetSeconds,
-      });
-    }
-
-    next();
+    return respond(res, next, entry.count, entry.resetAt, at);
   };
 }
 

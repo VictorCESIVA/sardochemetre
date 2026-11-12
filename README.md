@@ -39,8 +39,9 @@ de l'inventaire se trouve dans [`docs/screenshots/README.md`](docs/screenshots/R
   et récupère jusqu'à 5 tweets originaux récents, avec le profil, les médias, les
   tweets cités et les compteurs.
 - **Collecte automatique** : un scheduler tourne toutes les 5 minutes
-  (`CRON_SCHEDULE=*/5 * * * *`), enregistre les nouveaux tweets et analyse les
-  nouveaux venus avec OpenCode. Les tweets déjà collectés restent en base.
+  (`CRON_SCHEDULE=*/5 * * * *`), protégé par un bail partagé qui réserve le cron à
+  une seule instance ; il enregistre les nouveaux tweets et analyse les nouveaux
+  venus avec OpenCode. Les tweets déjà collectés restent en base.
 - **Embeds X complets** : avatar, nom, badge vérifié bleu, `@handle`, date, texte,
   photos et vidéos, tweet cité, réponses, reposts, j'aime, vues et lien
   « Voir sur X ».
@@ -202,12 +203,14 @@ Variables principales :
 | `CORS_ORIGIN` | `*` en local | Origine(s) autorisée(s), séparées par des virgules. |
 | `ANALYZE_RATE_LIMIT` | `10` | Requêtes d'analyse autorisées par IP et par fenêtre. |
 | `ANALYZE_RATE_WINDOW_MS` | `60000` | Durée de la fenêtre de limitation, en millisecondes. |
+| `ANALYZE_RATE_LIMIT_SHARED` | `false` | `true` partage le compteur entre instances via `analyze_rate_limits` (SQLite ou PostgreSQL). |
 | `TRUST_PROXY` | — | `1` derrière un proxy de confiance (Railway/Render). |
 | `ANALYZE_API_KEY` | — | Si définie, exige `Authorization: Bearer <clé>` ou `x-analyze-key: <clé>` sur les routes POST d'analyse. |
 | `TWITTER_SOURCE` | `profile` | `profile`, `syndication`, `x` ou `mock`. |
 | `TWITTER_SYNC_LIMIT` | `5` | Tweets récupérés par cycle (la source `profile` plafonne à 5). |
 | `CRON_SCHEDULE` | `*/5 * * * *` | Fréquence du scheduler. |
 | `CRON_RUN_ON_START` | `false` | Lance un cycle immédiat au démarrage. |
+| `SCHEDULER_LOCK_TTL_MS` | `900000` | Durée du bail scheduler, renouvelé toutes les TTL/3. Une seule instance exécute le cron. |
 | `AI_PROVIDER` | `opencode` | Provider d'analyse. |
 | `OPENCODE_API_KEY` | `oc_sk_...` | Clé OpenCode, uniquement côté backend. |
 | `OPENCODE_MODEL` | `deepseek-v4.1-flash` | Modèle utilisé. |
@@ -275,7 +278,7 @@ cd frontend && npm run build
 ./test-install.sh
 ```
 
-État actuel de la suite : **98 tests backend** et **41 tests frontend**, lint et
+État actuel de la suite : **106 tests backend** et **41 tests frontend**, lint et
 build sans erreur, et aucune vulnérabilité signalée par `npm audit` au moment de la
 rédaction.
 
@@ -297,6 +300,8 @@ ce tweet, recherche d'un mot-clé réel, profil, statistiques et BullshitMètre.
 │   │   ├── schema.js          # Schéma, colonnes d'embed et migrations douces
 │   │   ├── sqlite.js          # Repository SQLite (tweets, profil, analyses)
 │   │   ├── postgres.js        # Pool PostgreSQL
+│   │   ├── schedulerLeaseStore.js # Bail du scheduler (SQLite/PostgreSQL)
+│   │   ├── rateLimitStore.js  # Compteur de débit partagé
 │   │   ├── periods.js         # Fenêtres day/week/month/all
 │   │   └── mock-data.js       # Chargement du mock de test
 │   ├── routes/                # Routes tweets et IA
@@ -304,8 +309,9 @@ ce tweet, recherche d'un mot-clé réel, profil, statistiques et BullshitMètre.
 │   │   ├── twitterService.js  # Sources profile, syndication, x, mock
 │   │   ├── opencodeService.js # Appels OpenCode et normalisation
 │   │   ├── aiService.js       # Sélection du provider
+│   │   ├── schedulerLock.js   # Bail renouvelable du scheduler
 │   │   └── claudeService.js   # Prompt, parsing et provider Anthropic historique
-│   ├── migrations/            # Migrations PostgreSQL (dont profil et embed)
+│   ├── migrations/            # Migrations PostgreSQL (profil, embed, bail)
 │   ├── mock/tweets.json       # Tweets de test
 │   └── test/                  # Tests node:test
 ├── frontend/
@@ -410,7 +416,9 @@ de la base et les analyses du backend.
   `CRON_SCHEDULE=*/5 * * * *`.
 - **Base** : disque persistant pour SQLite, ou PostgreSQL pour éviter le disque.
 - **CORS** : `CORS_ORIGIN` doit contenir l'origine exacte du frontend.
-- **Scheduler** : une seule instance backend doit l'exécuter.
+- **Scheduler** : le bail `scheduler_leases` garantit qu'une seule instance exécute
+  le cron, y compris en multi-instance. Il se libère à l'arrêt et expire après
+  `SCHEDULER_LOCK_TTL_MS` si l'instance meurt.
 
 Le détail est dans [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
@@ -436,8 +444,9 @@ Le détail est dans [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
   `Authorization: Bearer <clé>` ou `x-analyze-key`, et le frontend masque alors le
   bouton de réanalyse. Les deux routes facturées restent limitées à 10 requêtes par
   IP et par minute (`ANALYZE_RATE_LIMIT`, `ANALYZE_RATE_WINDOW_MS`), avec un
-  compteur en mémoire propre à chaque instance ; une limitation partagée entre
-  plusieurs instances reste à prévoir.
+  compteur en mémoire propre à chaque instance. `ANALYZE_RATE_LIMIT_SHARED=true`
+  utilise la table `analyze_rate_limits` pour partager la limite entre instances
+  (nécessite la migration PostgreSQL `004_scheduler_lease.sql`).
 - **CORS** : `CORS_ORIGIN=*` par défaut en local ; à restreindre en production.
 - **SQLite** : mono-instance, nécessite un disque persistant. Le mode WAL crée des
   fichiers `-wal` et `-shm` à côté de la base.

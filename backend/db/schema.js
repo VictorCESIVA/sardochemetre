@@ -42,6 +42,22 @@ CREATE TABLE IF NOT EXISTS analyses (
 );
 `;
 
+const SCHEDULER_LEASES_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS scheduler_leases (
+  name TEXT PRIMARY KEY,
+  owner TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+`;
+
+const RATE_LIMITS_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS analyze_rate_limits (
+  client_key TEXT PRIMARY KEY,
+  window_start INTEGER NOT NULL,
+  count INTEGER NOT NULL
+);
+`;
+
 const INDEXES_SQL = `
 CREATE UNIQUE INDEX IF NOT EXISTS idx_analyses_tweet_id_unique ON analyses(tweet_id);
 CREATE INDEX IF NOT EXISTS idx_analyses_tweet_id ON analyses(tweet_id);
@@ -177,6 +193,8 @@ function ensureSchema(db) {
 
   dedupeAnalyses(db);
   db.exec(INDEXES_SQL);
+  db.exec(SCHEDULER_LEASES_TABLE_SQL);
+  db.exec(RATE_LIMITS_TABLE_SQL);
 
   db.exec(`
     UPDATE tweets
@@ -191,6 +209,8 @@ module.exports = {
   TWEETS_TABLE_SQL,
   PROFILE_TABLE_SQL,
   ANALYSES_TABLE_SQL,
+  SCHEDULER_LEASES_TABLE_SQL,
+  RATE_LIMITS_TABLE_SQL,
   INDEXES_SQL,
   ensureSchema,
   ensureTweetSourceColumn,

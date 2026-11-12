@@ -173,14 +173,17 @@ Un cycle :
 Les anciens tweets restent en base : la collecte ne remplace pas l'archive. Un tweet
 déjà analysé n'est pas rappelé à l'IA, ce qui limite le coût. `noOverlap: true`
 empêche deux cycles simultanés **dans un même processus**. En déploiement
-multi-instances, un seul backend doit faire tourner le scheduler.
+multi-instances, un bail `scheduler_leases` (table SQLite ou PostgreSQL) est acquis
+au démarrage puis renouvelé toutes les `SCHEDULER_LOCK_TTL_MS / 3` : une seule
+instance exécute le cron. Une instance qui perd le bail arrête son cron ; le bail est
+libéré à l'arrêt ou expire après la TTL si le processus meurt.
 
 Les erreurs réseau, de parsing ou d'API sont journalisées et n'arrêtent pas le
 serveur.
 
 ## Modèle de données
 
-Trois tables :
+Cinq tables :
 
 ```text
 tweets
@@ -215,6 +218,16 @@ analyses
   fact_checks   JSONB (PostgreSQL) / TEXT JSON (SQLite)
   humor_comment TEXT
   analyzed_at   TIMESTAMP
+
+scheduler_leases
+  name          TEXT PRIMARY KEY   (scheduler)
+  owner         TEXT               (pid + UUID de l'instance)
+  expires_at    TIMESTAMPTZ / TEXT ISO
+
+analyze_rate_limits
+  client_key    TEXT PRIMARY KEY   (adresse IP)
+  window_start  BIGINT / INTEGER   (début de fenêtre, ms)
+  count         BIGINT / INTEGER
 ```
 
 SQLite stocke les dates en texte ISO et les structures JSON en texte sérialisé ;
@@ -401,12 +414,14 @@ La réponse d'analyse suit le même format que les analyses stockées : score bo
   que si `NODE_ENV=test`, `DEMO_MODE=true` ou `AI_PROVIDER=mock`. Sinon l'absence de
   provider produit `503 AI_NOT_CONFIGURED` et un échec fournisseur `502`.
 - **Rate limiting** : `POST /api/ai/analyze` et `POST /api/tweets/analyze` partagent
-  un compteur en mémoire par adresse IP (10 requêtes par minute par défaut),
-  configurable avec `ANALYZE_RATE_LIMIT` et `ANALYZE_RATE_WINDOW_MS`. Au-delà, la
-  réponse est `429` avec `Retry-After`. Le compteur est propre à chaque processus :
-  plusieurs instances ne partagent pas la limite. Derrière Railway/Render, activez
-  `TRUST_PROXY=1` pour que `req.ip` lise `X-Forwarded-For` ; sans proxy de confiance,
-  l'en-tête est ignoré et ne permet pas de contourner la limite.
+  un compteur par adresse IP (10 requêtes par minute par défaut), configurable avec
+  `ANALYZE_RATE_LIMIT` et `ANALYZE_RATE_WINDOW_MS`. Au-delà, la réponse est `429`
+  avec `Retry-After`. Par défaut le compteur est en mémoire, donc propre à chaque
+  processus ; `ANALYZE_RATE_LIMIT_SHARED=true` utilise la table
+  `analyze_rate_limits` pour partager la limite entre instances. Derrière
+  Railway/Render, activez `TRUST_PROXY=1` pour que `req.ip` lise
+  `X-Forwarded-For` ; sans proxy de confiance, l'en-tête est ignoré et ne permet pas
+  de contourner la limite.
 - **CORS** : `*` par défaut. Configurez `CORS_ORIGIN` en production.
 - **Taille des corps** : 64 ko pour JSON et URL-encoded ; `content` d'analyse limité
   à 1000 caractères.

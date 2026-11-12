@@ -9,7 +9,27 @@ const {
   schedulerReadiness,
 } = require('../scheduler');
 
-function withEnv(values, fn) {
+function createMemoryLeaseStore() {
+  const leases = new Map();
+
+  return {
+    async acquire({ name, owner, ttlMs }) {
+      const current = leases.get(name);
+      const now = Date.now();
+      if (current && current.owner !== owner && current.expiresAt > now) {
+        return false;
+      }
+      leases.set(name, { owner, expiresAt: now + ttlMs });
+      return true;
+    },
+    async release({ name, owner }) {
+      const current = leases.get(name);
+      if (current && current.owner === owner) leases.delete(name);
+    },
+  };
+}
+
+async function withEnv(values, fn) {
   const saved = {};
   for (const key of Object.keys(values)) {
     saved[key] = process.env[key];
@@ -21,7 +41,7 @@ function withEnv(values, fn) {
   }
 
   try {
-    return fn();
+    return await fn();
   } finally {
     for (const [key, value] of Object.entries(saved)) {
       if (value === undefined) {
@@ -177,14 +197,14 @@ test('schedulerReadiness : AI_PROVIDER=mock désactive le scheduler', () => {
   assert.match(readiness.reason, /AI_PROVIDER=mock/);
 });
 
-test('startScheduler ne démarre pas en démo', () => {
-  withEnv({ DEMO_MODE: 'true' }, () => {
-    assert.equal(startScheduler(), null);
+test('startScheduler ne démarre pas en démo', async () => {
+  await withEnv({ DEMO_MODE: 'true' }, async () => {
+    assert.equal(await startScheduler(), null);
   });
 });
 
-test('startScheduler refuse un CRON_SCHEDULE invalide', () => {
-  withEnv(
+test('startScheduler refuse un CRON_SCHEDULE invalide', async () => {
+  await withEnv(
     {
       DEMO_MODE: 'false',
       TWITTER_SOURCE: 'x',
@@ -194,14 +214,14 @@ test('startScheduler refuse un CRON_SCHEDULE invalide', () => {
       CRON_SCHEDULE: 'pas une expression cron',
       CRON_RUN_ON_START: 'false',
     },
-    () => {
-      assert.equal(startScheduler(), null);
+    async () => {
+      assert.equal(await startScheduler(), null);
     }
   );
 });
 
-test('startScheduler démarre et s’arrête avec node-cron', () => {
-  withEnv(
+test('startScheduler démarre et s’arrête avec node-cron', async () => {
+  await withEnv(
     {
       DEMO_MODE: 'false',
       TWITTER_SOURCE: 'x',
@@ -211,22 +231,24 @@ test('startScheduler démarre et s’arrête avec node-cron', () => {
       CRON_SCHEDULE: '0 3 * * *',
       CRON_RUN_ON_START: 'false',
     },
-    () => {
-      const task = startScheduler();
+    async () => {
+      const task = await startScheduler({ lockStore: createMemoryLeaseStore() });
       try {
         assert.ok(task);
         assert.equal(typeof task.stop, 'function');
         assert.equal(typeof task.getStatus, 'function');
+        assert.ok(task.schedulerLock);
+        assert.ok(task.schedulerHeartbeat);
       } finally {
-        stopScheduler(task);
+        await stopScheduler(task);
         if (task && typeof task.destroy === 'function') task.destroy();
       }
     }
   );
 });
 
-test('startScheduler démarre avec OpenCode', () => {
-  withEnv(
+test('startScheduler démarre avec OpenCode', async () => {
+  await withEnv(
     {
       DEMO_MODE: 'false',
       TWITTER_SOURCE: 'x',
@@ -237,14 +259,51 @@ test('startScheduler démarre avec OpenCode', () => {
       CRON_SCHEDULE: '0 4 * * *',
       CRON_RUN_ON_START: 'false',
     },
-    () => {
-      const task = startScheduler();
+    async () => {
+      const task = await startScheduler({ lockStore: createMemoryLeaseStore() });
       try {
         assert.ok(task);
       } finally {
-        stopScheduler(task);
+        await stopScheduler(task);
         if (task && typeof task.destroy === 'function') task.destroy();
       }
+    }
+  );
+});
+
+test('startScheduler refuse une deuxième instance et libère le bail', async () => {
+  const store = createMemoryLeaseStore();
+
+  await withEnv(
+    {
+      DEMO_MODE: 'false',
+      TWITTER_SOURCE: 'x',
+      TWITTER_BEARER_TOKEN: 'token',
+      AI_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'key',
+      CRON_SCHEDULE: '0 5 * * *',
+      CRON_RUN_ON_START: 'false',
+    },
+    async () => {
+      const first = await startScheduler({ lockStore: store, lockTtlMs: 60_000 });
+      assert.ok(first);
+
+      try {
+        assert.equal(
+          await startScheduler({ lockStore: store, lockTtlMs: 60_000 }),
+          null
+        );
+      } finally {
+        await stopScheduler(first);
+        if (typeof first.destroy === 'function') first.destroy();
+      }
+
+      assert.equal(first.schedulerLock, null);
+
+      const second = await startScheduler({ lockStore: store, lockTtlMs: 60_000 });
+      assert.ok(second);
+      await stopScheduler(second);
+      if (typeof second.destroy === 'function') second.destroy();
     }
   );
 });

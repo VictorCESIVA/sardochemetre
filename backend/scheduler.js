@@ -8,8 +8,22 @@ const {
   getTwitterSource,
 } = require('./services/twitterService');
 const aiService = require('./services/aiService');
+const {
+  createSchedulerLock,
+  DEFAULT_TTL_MS,
+} = require('./services/schedulerLock');
+const { createSchedulerLeaseStore } = require('./db/schedulerLeaseStore');
 
 const DEFAULT_CRON = '0 * * * *';
+const MIN_LOCK_TTL_MS = 60_000;
+
+function resolveLockTtl(env = process.env, override = undefined) {
+  const raw = override === undefined ? env.SCHEDULER_LOCK_TTL_MS : override;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed >= MIN_LOCK_TTL_MS
+    ? parsed
+    : DEFAULT_TTL_MS;
+}
 
 function schedulerReadiness(env = process.env) {
   const missing = [];
@@ -210,17 +224,42 @@ function runNow(dbClient) {
   return processTweets(dbClient);
 }
 
-function stopScheduler(task) {
-  if (task && typeof task.stop === 'function') {
+/**
+ * Arrête le cron, le heartbeat et libère le bail. Asynchrone pour que la
+ * libération du verrou soit terminée avant la fermeture de la base.
+ */
+async function stopScheduler(task) {
+  if (!task) return;
+
+  if (task.schedulerHeartbeat) {
+    clearInterval(task.schedulerHeartbeat);
+    task.schedulerHeartbeat = null;
+  }
+
+  if (typeof task.stop === 'function') {
     task.stop();
+  }
+
+  const lock = task.schedulerLock;
+  task.schedulerLock = null;
+  if (lock) {
+    try {
+      await lock.release();
+    } catch (error) {
+      console.error('[Scheduler] Libération du verrou impossible :', error.message);
+    }
   }
 }
 
 /**
- * Démarre le cron uniquement en production et si les clés existent.
- * Retourne la tâche cron, ou null si le scheduler est désactivé.
+ * Démarre le cron uniquement en production, si les clés existent et si cette
+ * instance obtient le bail partagé. Retourne la tâche cron, ou null.
  */
-function startScheduler({ runImmediately = false } = {}) {
+async function startScheduler({
+  runImmediately = false,
+  lockStore = null,
+  lockTtlMs = undefined,
+} = {}) {
   const readiness = schedulerReadiness();
   if (!readiness.ready) {
     console.log(`[Scheduler] Désactivé (${readiness.reason})`);
@@ -243,21 +282,89 @@ function startScheduler({ runImmediately = false } = {}) {
     return null;
   }
 
-  let task;
+  let lock;
+  try {
+    const store = lockStore || createSchedulerLeaseStore(dbClient);
+    lock = createSchedulerLock({ store, ttlMs: resolveLockTtl(undefined, lockTtlMs) });
+
+    if (!(await lock.acquire())) {
+      console.log(
+        '[Scheduler] Bail détenu par une autre instance — scheduler non démarré'
+      );
+      return null;
+    }
+  } catch (error) {
+    console.error(
+      '[Scheduler] Verrou partagé indisponible :',
+      error.message,
+      '— exécutez npm run migrate si la table scheduler_leases manque'
+    );
+    return null;
+  }
+
+  let task = null;
+  let heartbeat = null;
+
   try {
     task = cron.schedule(
       schedule,
-      () => {
-        processTweets(dbClient);
+      async () => {
+        try {
+          if (!(await lock.renew())) {
+            console.warn('[Scheduler] Bail perdu — arrêt du scheduler');
+            if (heartbeat) {
+              clearInterval(heartbeat);
+              heartbeat = null;
+              task.schedulerHeartbeat = null;
+            }
+            if (typeof task.stop === 'function') task.stop();
+            return;
+          }
+          // Attendre le cycle pour que `noOverlap` couvre réellement le travail.
+          await processTweets(dbClient);
+        } catch (error) {
+          console.error(
+            '[Scheduler] Renouvellement du bail en échec :',
+            error.message
+          );
+        }
       },
       { noOverlap: true }
     );
   } catch (error) {
+    await lock.release().catch(() => {});
     console.error('[Scheduler] Démarrage impossible :', error.message);
     return null;
   }
 
-  console.log(`[Scheduler] Démarré (DB ${dbClient}, "${schedule}")`);
+  // Renouvellement périodique : trois heartbeats par durée de bail.
+  const heartbeatMs = Math.max(30_000, Math.floor(lock.ttlMs / 3));
+  heartbeat = setInterval(() => {
+    lock
+      .renew()
+      .then((renewed) => {
+        if (renewed) return;
+        console.warn('[Scheduler] Bail perdu — arrêt du scheduler');
+        if (heartbeat) {
+          clearInterval(heartbeat);
+          heartbeat = null;
+          task.schedulerHeartbeat = null;
+        }
+        if (typeof task.stop === 'function') task.stop();
+      })
+      .catch((error) => {
+        console.error('[Scheduler] Heartbeat en échec :', error.message);
+      });
+  }, heartbeatMs);
+  if (typeof heartbeat.unref === 'function') heartbeat.unref();
+
+  task.schedulerLock = lock;
+  task.schedulerHeartbeat = heartbeat;
+  task.schedulerTtlMs = lock.ttlMs;
+
+  console.log(
+    `[Scheduler] Démarré (DB ${dbClient}, "${schedule}", bail ${lock.ttlMs} ms)`
+  );
 
   const immediate =
     runImmediately ||
@@ -277,5 +384,6 @@ module.exports = {
   runNow,
   processTweets,
   schedulerReadiness,
+  resolveLockTtl,
   DEFAULT_CRON,
 };

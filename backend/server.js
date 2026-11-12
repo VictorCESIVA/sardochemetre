@@ -33,13 +33,17 @@ async function closeResources(dbClient) {
 function registerShutdown(server, schedulerTask, dbClient) {
   let shuttingDown = false;
 
-  const shutdown = (signal) => {
+  const shutdown = async (signal) => {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`\n[Server] ${signal} reçu, arrêt en cours...`);
 
     const { stopScheduler } = require('./scheduler');
-    stopScheduler(schedulerTask);
+    try {
+      await stopScheduler(schedulerTask);
+    } catch (error) {
+      console.error('[Server] Arrêt du scheduler en échec :', error.message);
+    }
 
     const forceExit = setTimeout(() => {
       console.error('[Server] Arrêt forcé après 10 s');
@@ -60,8 +64,15 @@ function registerShutdown(server, schedulerTask, dbClient) {
     });
   };
 
-  process.once('SIGINT', () => shutdown('SIGINT'));
-  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  const handleSignal = (signal) => {
+    shutdown(signal).catch((error) => {
+      console.error('[Server] Arrêt en échec :', error.message);
+      process.exit(1);
+    });
+  };
+
+  process.once('SIGINT', () => handleSignal('SIGINT'));
+  process.once('SIGTERM', () => handleSignal('SIGTERM'));
 }
 
 async function start() {
@@ -80,9 +91,18 @@ async function start() {
 
     server.once('error', reject);
 
-    server.once('listening', () => {
+    server.once('listening', async () => {
       const { startScheduler } = require('./scheduler');
-      const schedulerTask = config.demo ? null : startScheduler();
+      let schedulerTask = null;
+
+      if (!config.demo) {
+        try {
+          schedulerTask = await startScheduler();
+        } catch (error) {
+          console.error('[Server] Scheduler non démarré :', error.message);
+        }
+      }
+
       const ai = aiService.getStatus();
 
       console.log('');

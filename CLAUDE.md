@@ -58,17 +58,19 @@ backend/
     schema.js            # schéma, colonnes d'embed, migrations douces
     sqlite.js            # repository SQLite (tweets, profil, analyses)
     postgres.js          # pool PostgreSQL
+    schedulerLeaseStore.js # bail du scheduler (SQLite/PostgreSQL)
+    rateLimitStore.js    # compteur de débit partagé
     periods.js           # day/week/month/all
     mock-data.js         # chargement du mock de test
   routes/                # routes tweets + routes IA
-  middleware/            # rate limiting des routes d'analyse
+  middleware/            # rate limiting, authentification des analyses
   services/
     twitterService.js    # sources profile, syndication, x, mock
     opencodeService.js   # appels OpenCode et normalisation
     aiService.js         # sélection du provider
+    schedulerLock.js     # bail renouvelable du scheduler
     claudeService.js     # prompt, parsing, provider Anthropic historique
-  scheduler.js
-  migrations/            # migrations PostgreSQL (source, profil, embed)
+  migrations/            # migrations PostgreSQL (source, profil, embed, bail)
   mock/tweets.json       # tweets de test
   test/                  # tests node:test
 
@@ -96,7 +98,7 @@ archive/                 # ancien squelette de projet
 cd backend
 npm start                # serveur
 npm run dev              # serveur avec rechargement
-npm test                 # 98 tests
+npm test                 # 106 tests
 npm run sync             # collecte les tweets de la source configurée
 npm run sync:analyze     # collecte + analyse les nouveaux tweets
 npm run seed             # données mock (tests uniquement)
@@ -199,9 +201,10 @@ Profil :
 - `mock` : `backend/mock/tweets.json`, dates recalées, réservé aux tests.
 
 Le scheduler démarre si `DEMO_MODE` n'est pas `true`, si la source est valide, si la
-clé IA est présente et si `CRON_SCHEDULE` est valide. Il récupère
-`TWITTER_SYNC_LIMIT` tweets (5 avec `profile`), enregistre le profil, upsert les
-tweets, analyse uniquement les nouveaux et conserve les anciens en base.
+clé IA est présente, si `CRON_SCHEDULE` est valide et si l'instance obtient le bail
+`scheduler_leases`. Il récupère `TWITTER_SYNC_LIMIT` tweets (5 avec `profile`),
+enregistre le profil, upsert les tweets, analyse uniquement les nouveaux et conserve
+les anciens en base. Le bail est renouvelé par heartbeat et libéré à l'arrêt.
 
 ## Variables principales
 
@@ -216,6 +219,8 @@ ANALYZE_RATE_LIMIT=10
 ANALYZE_RATE_WINDOW_MS=60000
 # TRUST_PROXY=1            # derrière Railway/Render
 # ANALYZE_API_KEY=...      # protège les routes POST d'analyse (Bearer / x-analyze-key)
+# ANALYZE_RATE_LIMIT_SHARED=true  # compteur partagé entre instances
+# SCHEDULER_LOCK_TTL_MS=900000    # bail du scheduler
 AI_PROVIDER=opencode
 OPENCODE_API_KEY=oc_sk_...
 OPENCODE_MODEL=deepseek-v4.1-flash
@@ -249,7 +254,9 @@ nécessaire.
   autorisé qu'avec `NODE_ENV=test`, `DEMO_MODE=true` ou `AI_PROVIDER=mock`.
 - Les appels Twitter/IA ne doivent pas bloquer le démarrage du serveur ni faire
   tomber le processus.
-- Le scheduler ne doit pas être dupliqué sur plusieurs instances.
+- Le scheduler est protégé par un bail (`scheduler_leases`) renouvelé
+  périodiquement : une seule instance exécute le cron. Ne pas contourner ce verrou
+  ni supprimer la libération à l'arrêt.
 - La source `profile` est non officielle : toute évolution du parseur doit rester
   tolérante et testée avec un HTML de référence.
 - Le ton reste satirique, pas harcelant. Pas d'attaque personnelle, pas de doxxing.
@@ -258,7 +265,7 @@ nécessaire.
 
 ## Tests
 
-- Backend : **98 tests** (`node --test test/*.test.js`, `npm test`).
+- Backend : **106 tests** (`node --test test/*.test.js`, `npm test`).
 - Frontend : **41 tests** (`vitest run`, `npm test`).
 - `npm run lint` et `npm run build` passent.
 - `npm audit` ne signale aucune vulnérabilité connue au moment de la rédaction.
@@ -276,9 +283,9 @@ nécessaire.
   grandit que des tweets observés.
 - PostgreSQL est implémenté mais n'a pas été exécuté ici contre un serveur réel.
 - Authentification optionnelle : sans `ANALYZE_API_KEY`, les routes d'analyse sont
-  publiques et payantes, limitées en mémoire à 10 requêtes par IP et par minute
-  (`ANALYZE_RATE_LIMIT`). Le compteur est propre à chaque instance ; une limite
-  partagée reste à prévoir en multi-instance.
+  publiques et payantes, limitées à 10 requêtes par IP et par minute
+  (`ANALYZE_RATE_LIMIT`). Le compteur est en mémoire par défaut ;
+  `ANALYZE_RATE_LIMIT_SHARED=true` le partage entre instances via la base.
 - SQLite est mono-instance et nécessite un disque persistant en production.
 - L'IA est faillible : elle peut se tromper, inventer une source ou mal interpréter
   un tweet.

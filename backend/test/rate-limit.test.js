@@ -45,6 +45,40 @@ function invoke(limiter, overrides = {}) {
   return { headers, statusCode, payload, nextCalled };
 }
 
+async function invokeShared(limiter, overrides = {}) {
+  const headers = {};
+  let statusCode = null;
+  let payload = null;
+  let nextCalled = false;
+
+  const req = {
+    method: 'POST',
+    ip: '203.0.113.10',
+    socket: { remoteAddress: '203.0.113.10' },
+    ...overrides,
+  };
+
+  const res = {
+    setHeader(name, value) {
+      headers[name.toLowerCase()] = String(value);
+    },
+    status(code) {
+      statusCode = code;
+      return this;
+    },
+    json(body) {
+      payload = body;
+      return this;
+    },
+  };
+
+  await limiter(req, res, () => {
+    nextCalled = true;
+  });
+
+  return { headers, statusCode, payload, nextCalled };
+}
+
 test('rate limiter : autorise la limite puis répond 429', () => {
   const clock = { now: 1_000_000 };
   const limiter = createRateLimiter({
@@ -152,4 +186,61 @@ test('resolveTrustProxy : désactivé par défaut, un saut pour true', () => {
   assert.equal(resolveTrustProxy({ TRUST_PROXY: 'true' }), 1);
   assert.equal(resolveTrustProxy({ TRUST_PROXY: '2' }), 2);
   assert.equal(resolveTrustProxy({ TRUST_PROXY: 'nope' }), null);
+});
+
+test('rate limiter : un store partagé rapproche deux instances', async () => {
+  const counts = new Map();
+  const store = {
+    async consume({ key, windowMs, now }) {
+      const windowStart = Math.floor(now / windowMs) * windowMs;
+      const count = (counts.get(key) || 0) + 1;
+      counts.set(key, count);
+      return { count, resetAt: windowStart + windowMs };
+    },
+  };
+
+  const first = createRateLimiter({
+    limit: 1,
+    windowMs: 60_000,
+    now: () => 1_000_000,
+    store,
+  });
+  const second = createRateLimiter({
+    limit: 1,
+    windowMs: 60_000,
+    now: () => 1_000_000,
+    store,
+  });
+
+  const allowed = await invokeShared(first);
+  assert.equal(allowed.nextCalled, true);
+  assert.equal(allowed.headers['ratelimit-remaining'], '0');
+
+  const denied = await invokeShared(second);
+  assert.equal(denied.nextCalled, false);
+  assert.equal(denied.statusCode, 429);
+  assert.equal(denied.payload.retryAfter, 20);
+});
+
+test('rate limiter : une erreur du store partagé passe au middleware d’erreur', async () => {
+  const failure = new Error('store indisponible');
+  const limiter = createRateLimiter({
+    limit: 1,
+    windowMs: 60_000,
+    store: {
+      async consume() {
+        throw failure;
+      },
+    },
+  });
+
+  let received = null;
+  const req = { method: 'POST', ip: '203.0.113.9' };
+  const res = { setHeader() {}, status() { return this; }, json() { return this; } };
+
+  await limiter(req, res, (error) => {
+    received = error;
+  });
+
+  assert.equal(received, failure);
 });

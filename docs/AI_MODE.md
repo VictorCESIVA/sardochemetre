@@ -139,8 +139,9 @@ intensif.
 
 Un appel d'analyse est court, mais le proxy reste un endpoint payant. Le scheduler
 n'analyse que les nouveaux tweets, ce qui évite de repayer les mêmes analyses. En
-production, protégez les routes d'analyse par une authentification ou un rate
-limiting.
+production, protégez les routes d'analyse par `ANALYZE_API_KEY` et/ou le rate
+limiting. En multi-instance, `ANALYZE_RATE_LIMIT_SHARED=true` partage le compteur
+via la table `analyze_rate_limits`.
 
 ## Sans clé OpenCode
 

@@ -67,6 +67,7 @@ Les fichiers `.env` sont ignorés par Git. Ne versionnez jamais de clé réelle.
 | `CORS_ORIGIN` | `*` | `*` ou plusieurs origines séparées par des virgules. |
 | `ANALYZE_RATE_LIMIT` | `10` | Requêtes d'analyse par IP et par fenêtre. |
 | `ANALYZE_RATE_WINDOW_MS` | `60000` | Durée de la fenêtre de limitation (ms). |
+| `ANALYZE_RATE_LIMIT_SHARED` | `false` | `true` partage le compteur via la table `analyze_rate_limits` (multi-instance). |
 | `TRUST_PROXY` | — | `1` (ou un nombre de sauts) derrière un proxy de confiance. |
 | `ANALYZE_API_KEY` | — | Clé partagée optionnelle pour `POST /api/ai/analyze` et `POST /api/tweets/analyze` (`Authorization: Bearer` ou `x-analyze-key`). |
 | `TWITTER_SOURCE` | `profile` | `profile`, `syndication`, `x` ou `mock`. Voir la section 5. |
@@ -78,6 +79,7 @@ Les fichiers `.env` sont ignorés par Git. Ne versionnez jamais de clé réelle.
 | `SARDOCHE_USER_ID` | — | ID numérique du compte pour l'API X ; prioritaire sur le username s'il est fourni. |
 | `CRON_SCHEDULE` | `*/5 * * * *` | Expression cron du scheduler. |
 | `CRON_RUN_ON_START` | `false` | `true` lance un cycle immédiat au démarrage. |
+| `SCHEDULER_LOCK_TTL_MS` | `900000` | Durée du bail scheduler, renouvelé toutes les TTL/3. |
 | `AI_PROVIDER` | `opencode` | Provider d'analyse : `opencode` (standard), `anthropic` (historique) ou `mock` (tests). |
 | `OPENCODE_API_KEY` | — | Clé `oc_sk_...` créée sur la console OpenCode. Obligatoire pour l'IA réelle. |
 | `OPENCODE_MODEL` | `deepseek-v4.1-flash` | Modèle OpenCode utilisé. |
@@ -193,6 +195,10 @@ Le scheduler :
   encore ;
 - conserve les anciens tweets en base ;
 - ne lance pas deux cycles simultanés dans le même processus (`noOverlap`) ;
+- acquiert un bail `scheduler_leases` renouvelé par heartbeat : une seule instance
+  exécute le cron, même en multi-instance ;
+- libère le bail à l'arrêt et le laisse expirer après `SCHEDULER_LOCK_TTL_MS` si le
+  processus meurt ;
 - journalise les erreurs réseau sans arrêter le serveur.
 
 Configuration recommandée :
@@ -205,7 +211,10 @@ CRON_SCHEDULE=*/5 * * * *
 CRON_RUN_ON_START=false
 ```
 
-En production, **une seule instance backend** doit exécuter le scheduler.
+En production multi-instance, le bail `scheduler_leases` désigne automatiquement une
+seule instance active. Le bail est renouvelé toutes les `SCHEDULER_LOCK_TTL_MS / 3` ;
+une instance qui perd le bail arrête son cron. La table est créée automatiquement en
+SQLite et par la migration PostgreSQL `004_scheduler_lease.sql`.
 
 ### Import manuel
 
@@ -238,13 +247,15 @@ Le chemin relatif est résolu depuis le dossier `backend/`. Le schéma est cré�
 - `busy_timeout = 5000` ;
 - clés étrangères activées.
 
-Le schéma contient trois tables :
+Le schéma contient cinq tables :
 
 - `tweets` : `id`, `content`, `posted_at`, `likes`, `retweets`, `replies`, `views`,
   `media`, `quoted_tweet`, `source`, `analyzed`, `fetched_at` ;
 - `profile` : ligne unique (`id = 1`) avec `username`, `name`, `avatar_url`,
   `verified`, `followers`, `updated_at` ;
-- `analyses` : score, verdict, raisonnement, fact-checks JSON, punchline et date.
+- `analyses` : score, verdict, raisonnement, fact-checks JSON, punchline et date ;
+- `scheduler_leases` : bail du scheduler (`name`, `owner`, `expires_at`) ;
+- `analyze_rate_limits` : compteur partagé (`client_key`, `window_start`, `count`).
 
 Commandes utiles :
 
@@ -281,9 +292,10 @@ npm run migrate
 
 La commande crée la table de suivi `schema_migrations` et applique les fichiers
 `migrations/*.sql` dans l'ordre. Elle ne fait rien si `DB_CLIENT=sqlite` (le schéma
-SQLite est automatique). Les migrations `002_tweet_source.sql` et
-`003_profile_embed.sql` ajoutent la source, les compteurs d'embed et la table
-`profile`.
+SQLite est automatique). Les migrations `002_tweet_source.sql`,
+`003_profile_embed.sql` et `004_scheduler_lease.sql` ajoutent la source, les
+compteurs d'embed, la table `profile`, le bail scheduler et le compteur de débit
+partagé.
 
 4. Démarrez le backend :
 
@@ -298,9 +310,10 @@ curl http://localhost:3001/health
 # {"status":"ok","timestamp":"…","mode":"production","database":"postgres",…}
 ```
 
-PostgreSQL évite le disque persistant et permet plusieurs instances, mais le
-scheduler doit rester sur une seule instance. Ce chemin est implémenté et testé au
-niveau du schéma, mais n'a pas été exécuté ici contre un serveur PostgreSQL réel.
+PostgreSQL évite le disque persistant et permet plusieurs instances ; le scheduler
+est protégé par le bail `scheduler_leases` (une seule instance active). Ce chemin
+est implémenté et testé au niveau du schéma, mais n'a pas été exécuté ici contre un
+serveur PostgreSQL réel.
 
 ## 8. Lancer le frontend
 
@@ -326,7 +339,7 @@ cd frontend && npm run build
 ./test-backend.sh             # tests + smoke tests si le backend tourne
 ```
 
-État attendu : **98 tests backend**, **41 tests frontend**, lint et build sans
+État attendu : **106 tests backend**, **41 tests frontend**, lint et build sans
 erreur. Les smoke tests vérifient le premier tweet réellement présent, son détail, une
 recherche, le profil, les statistiques et le BullshitMètre.
 

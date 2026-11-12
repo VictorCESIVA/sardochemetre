@@ -10,6 +10,7 @@ const {
   resolveTrustProxy,
 } = require('./middleware/rateLimit');
 const { createAnalysisAuth } = require('./middleware/analysisAuth');
+const { createRateLimitStore } = require('./db/rateLimitStore');
 
 /**
  * Le seed de démo n'a de sens que si la source de tweets est le mock.
@@ -85,7 +86,23 @@ function createApp() {
   // Un seul compteur par IP pour toutes les routes d'analyse facturées.
   // L'authentification optionnelle est vérifiée après la limite de débit pour
   // que les tentatives invalides ne permettent pas de contourner le compteur.
-  const analyzeLimiter = createRateLimiter();
+  let rateLimitStore = null;
+  if (
+    String(process.env.ANALYZE_RATE_LIMIT_SHARED || '')
+      .trim()
+      .toLowerCase() === 'true'
+  ) {
+    try {
+      rateLimitStore = createRateLimitStore(dbClient);
+    } catch (error) {
+      console.error(
+        '[RateLimit] Store partagé indisponible, repli en mémoire :',
+        error.message
+      );
+    }
+  }
+
+  const analyzeLimiter = createRateLimiter({ store: rateLimitStore });
   const analysisAuth = createAnalysisAuth();
   app.use('/api/ai/analyze', analyzeLimiter, analysisAuth);
   app.use('/api/tweets/analyze', analyzeLimiter, analysisAuth);

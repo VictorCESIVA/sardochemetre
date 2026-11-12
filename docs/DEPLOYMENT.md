@@ -96,6 +96,8 @@ TRUST_PROXY=1
 ANALYZE_RATE_LIMIT=10
 ANALYZE_RATE_WINDOW_MS=60000
 # ANALYZE_API_KEY=...       # protège les routes POST d'analyse
+# ANALYZE_RATE_LIMIT_SHARED=true  # compteur partagé en multi-instance
+# SCHEDULER_LOCK_TTL_MS=900000    # bail du scheduler
 
 TWITTER_SOURCE=profile
 TWITTER_SYNC_LIMIT=5
@@ -166,11 +168,11 @@ Points à vérifier :
 - `POST /api/ai/analyze` répond `503` si la clé manque.
 
 Les appels sont facturés selon l'offre OpenCode. Les routes d'analyse sont protégées
-par un rate limiting en mémoire (10 requêtes par IP et par minute par défaut,
+par un rate limiting (10 requêtes par IP et par minute par défaut,
 `ANALYZE_RATE_LIMIT` et `ANALYZE_RATE_WINDOW_MS`). Derrière le proxy de la plateforme,
 activez `TRUST_PROXY=1` pour que la limite s'applique par IP réelle. Le compteur est
-propre à chaque instance : ajoutez un limiteur partagé si le backend est public et
-multi-instance. `ANALYZE_API_KEY` permet d'exiger une clé partagée
+en mémoire par défaut ; `ANALYZE_RATE_LIMIT_SHARED=true` le partage entre instances
+via `analyze_rate_limits`. `ANALYZE_API_KEY` permet d'exiger une clé partagée
 (`Authorization: Bearer` ou `x-analyze-key`) sur les routes POST d'analyse et de
 masquer la réanalyse côté frontend. Voir [`AI_MODE.md`](AI_MODE.md) pour les tarifs
 indicatifs.
@@ -216,14 +218,17 @@ npm run migrate
 ```
 
 Les migrations créent le schéma initial, la colonne `source`, les compteurs
-`replies`/`views`, les JSON `media`/`quoted_tweet` et la table `profile`.
+`replies`/`views`, les JSON `media`/`quoted_tweet`, la table `profile`, le bail
+`scheduler_leases` et le compteur de débit `analyze_rate_limits`.
 
 4. Démarrez le backend avec `npm start`.
 
-PostgreSQL évite le disque persistant et permet plusieurs instances. Attention
-toutefois au scheduler : **une seule instance** doit l'exécuter, sinon les cycles
-seront dupliqués. Ce chemin est implémenté, mais n'a pas été exécuté ici contre un
-serveur PostgreSQL réel.
+PostgreSQL évite le disque persistant et permet plusieurs instances. Le scheduler
+est protégé par le bail `scheduler_leases` : **une seule instance** exécute le cron,
+même si plusieurs backends démarrent. Exécutez `npm run migrate` pour créer les
+tables `scheduler_leases` et `analyze_rate_limits` ; sinon le scheduler refuse de
+démarrer et le limiteur partagé renvoie une erreur. Ce chemin est implémenté, mais
+n'a pas été exécuté ici contre un serveur PostgreSQL réel.
 
 ## 7. Relier le frontend au backend
 
@@ -272,7 +277,9 @@ CRON_SCHEDULE=*/5 * * * *
 ```
 
 Chaque cycle récupère jusqu'à 5 tweets, enregistre les nouveaux et analyse ceux qui
-ne le sont pas encore. Les anciens tweets restent en base.
+ne le sont pas encore. Les anciens tweets restent en base. Un bail
+`scheduler_leases` est acquis au démarrage et renouvelé par heartbeat ; une seule
+instance exécute le cron, et le bail est libéré à l'arrêt.
 
 Sur une plateforme qui endort les instances, le cron peut ne pas tourner à l'heure
 prévue, et la page x.com peut être bloquée. Utilisez une instance toujours active ou
@@ -291,6 +298,8 @@ un scheduler externe. Si la collecte `profile` échoue de façon répétée, bas
       limiting et, si le backend est public, par `ANALYZE_API_KEY`.
 - [ ] `TRUST_PROXY` adapté au proxy de la plateforme et limite de débit vérifiée
       (`ANALYZE_RATE_LIMIT`, `ANALYZE_RATE_WINDOW_MS`).
+- [ ] En multi-instance : `ANALYZE_RATE_LIMIT_SHARED=true` et migration
+      `004_scheduler_lease.sql` appliquée.
 - [ ] `NODE_ENV=production`.
 - [ ] Base non exposée publiquement.
 
@@ -299,7 +308,7 @@ un scheduler externe. Si la collecte `profile` échoue de façon répétée, bas
 - [ ] SQLite sur disque persistant, ou PostgreSQL provisionné.
 - [ ] Migrations exécutées (`npm run migrate`) si PostgreSQL.
 - [ ] Sauvegardes ou snapshots prévus.
-- [ ] Une seule instance pour SQLite et pour le scheduler.
+- [ ] Une seule instance pour SQLite (le bail scheduler couvre le cron).
 
 ### Frontend
 
