@@ -249,6 +249,7 @@ export default function TweetDetail() {
 
   const aiConfigured = aiStatus?.configured === true;
   const aiUnavailable = aiStatus?.configured === false;
+  const analysisProtected = aiStatus?.analysisProtected === true;
 
   const shareUrl =
     hasAnalysis && typeof window !== 'undefined'
@@ -261,9 +262,11 @@ export default function TweetDetail() {
     ? 'Vérification du statut IA…'
     : aiUnavailable
       ? 'Analyse IA non configurée : ajoutez OPENCODE_API_KEY dans backend/.env, puis redémarrez le backend.'
-      : aiStatusError
-        ? 'Statut IA indisponible : vérifiez que le backend est démarré.'
-        : null;
+      : analysisProtected
+        ? 'Réanalyse désactivée publiquement : les routes d’analyse sont protégées par ANALYZE_API_KEY.'
+        : aiStatusError
+          ? 'Statut IA indisponible : vérifiez que le backend est démarré.'
+          : null;
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -332,7 +335,7 @@ export default function TweetDetail() {
               <div className="mt-5 border-t border-rule pt-4">
                 <AiStatus status={aiStatus} />
 
-                {aiConfigured && (
+                {aiConfigured && !analysisProtected && (
                   <button
                     type="button"
                     onClick={() => runAnalysis(tweet)}
@@ -395,14 +398,16 @@ export default function TweetDetail() {
               <p className="mt-2 text-sm leading-relaxed text-ink">
                 {analysisError}
               </p>
-              <button
-                type="button"
-                onClick={() => runAnalysis(tweet)}
-                disabled={analyzing}
-                className="btn-outline mt-4"
-              >
-                Relancer
-              </button>
+              {!analysisProtected && (
+                <button
+                  type="button"
+                  onClick={() => runAnalysis(tweet)}
+                  disabled={analyzing}
+                  className="btn-outline mt-4"
+                >
+                  Relancer
+                </button>
+              )}
             </div>
           )}
 

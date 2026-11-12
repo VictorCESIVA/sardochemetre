@@ -201,6 +201,7 @@ Variables principales :
 | `ANALYZE_RATE_LIMIT` | `10` | Requêtes d'analyse autorisées par IP et par fenêtre. |
 | `ANALYZE_RATE_WINDOW_MS` | `60000` | Durée de la fenêtre de limitation, en millisecondes. |
 | `TRUST_PROXY` | — | `1` derrière un proxy de confiance (Railway/Render). |
+| `ANALYZE_API_KEY` | — | Si définie, exige `Authorization: Bearer <clé>` ou `x-analyze-key: <clé>` sur les routes POST d'analyse. |
 | `TWITTER_SOURCE` | `profile` | `profile`, `syndication`, `x` ou `mock`. |
 | `TWITTER_SYNC_LIMIT` | `5` | Tweets récupérés par cycle (la source `profile` plafonne à 5). |
 | `CRON_SCHEDULE` | `*/5 * * * *` | Fréquence du scheduler. |
@@ -272,7 +273,7 @@ cd frontend && npm run build
 ./test-install.sh
 ```
 
-État actuel de la suite : **91 tests backend** et **41 tests frontend**, lint et
+État actuel de la suite : **98 tests backend** et **41 tests frontend**, lint et
 build sans erreur, et aucune vulnérabilité signalée par `npm audit` au moment de la
 rédaction.
 
@@ -338,9 +339,9 @@ JSON ; les erreurs utilisent la forme `{ "error": "..." }`.
 | `GET` | `/api/tweets/bullshitmetre?period=` | `{period, globalScore, level, sampleSize, timestamp}`. Niveaux : `FAIBLE` (< 25), `MODÉRÉ` (< 50), `ÉLEVÉ` (< 75), `CRITIQUE` (≥ 75). |
 | `GET` | `/api/tweets/search?q=` | `{tweets, total}` — recherche simple sur le contenu. |
 | `GET` | `/api/tweets/:id` | `{tweet}` ou `404` avec `{error}`. |
-| `POST` | `/api/tweets/analyze` | Corps `{content, tweet_id?}`. `content` est obligatoire et limité à 1000 caractères. Retourne `{tweet}` si `tweet_id` existe et est en base, sinon `{analysis}`. |
+| `POST` | `/api/tweets/analyze` | Corps `{content, tweet_id?}`. `content` est obligatoire et limité à 1000 caractères. Retourne `{tweet}` si `tweet_id` existe et est en base, sinon `{analysis}`. `401` si `ANALYZE_API_KEY` est définie et absente/invalide, `503` sans provider IA configuré. |
 | `GET` | `/api/ai/status` | Provider, modèle, offre et état de configuration. Ne renvoie jamais la clé. |
-| `POST` | `/api/ai/analyze` | Analyse un contenu via OpenCode. Répond `503` si la clé manque, `502` si le provider échoue et `429` au-delà de la limite de débit. |
+| `POST` | `/api/ai/analyze` | Analyse un contenu via OpenCode. Répond `401` si `ANALYZE_API_KEY` est définie et absente/invalide, `503` si la clé manque, `502` si le provider échoue et `429` au-delà de la limite de débit. |
 
 Forme d'un tweet (plate) :
 
@@ -421,19 +422,20 @@ Le détail est dans [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
   via une autre source ; la base ne grandit donc que des tweets observés.
 - **IA faillible** : le modèle peut se tromper, inventer une source ou mal interpréter
   un tweet. Les réponses invalides sont rejetées, pas les erreurs de jugement.
-- **Repli de test** : le service d'analyse conserve un fallback déterministe utilisé
-  par les tests. L'interface ne le déclenche pas (le bouton de réanalyse est masqué
-  sans clé), mais un appel direct à `POST /api/tweets/analyze` sans configuration IA
-  peut produire une analyse simulée. Protégez la route et vérifiez
-  `GET /api/ai/status`.
+- **Repli mock limité aux tests/démo** : le service d'analyse ne produit une
+  analyse simulée que si `NODE_ENV=test`, `DEMO_MODE=true` ou `AI_PROVIDER=mock`.
+  En production, une clé manquante fait répondre `503 AI_NOT_CONFIGURED` et aucune
+  fausse analyse n'est persistée.
 - **Coût et offre** : les appels OpenCode sont facturés. Le payg est recommandé ; Go
   est supporté mais destiné aux agents de codage. Un compte sans crédits renvoie
   `402`.
-- **Pas d'authentification** : les routes restent publiques. Les deux routes
-  d'analyse facturées sont limitées à 10 requêtes par IP et par minute
-  (`ANALYZE_RATE_LIMIT`, `ANALYZE_RATE_WINDOW_MS`), avec un compteur en mémoire
-  propre à chaque instance. Une limitation partagée entre plusieurs instances ou une
-  authentification restent à prévoir pour une exposition à grande échelle.
+- **Authentification optionnelle** : sans `ANALYZE_API_KEY`, les routes d'analyse
+  restent publiques. Si la variable est définie, elles exigent
+  `Authorization: Bearer <clé>` ou `x-analyze-key`, et le frontend masque alors le
+  bouton de réanalyse. Les deux routes facturées restent limitées à 10 requêtes par
+  IP et par minute (`ANALYZE_RATE_LIMIT`, `ANALYZE_RATE_WINDOW_MS`), avec un
+  compteur en mémoire propre à chaque instance ; une limitation partagée entre
+  plusieurs instances reste à prévoir.
 - **CORS** : `CORS_ORIGIN=*` par défaut en local ; à restreindre en production.
 - **SQLite** : mono-instance, nécessite un disque persistant. Le mode WAL crée des
   fichiers `-wal` et `-shm` à côté de la base.

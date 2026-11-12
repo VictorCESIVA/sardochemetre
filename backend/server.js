@@ -94,7 +94,11 @@ async function start() {
       console.log(`  Base       : ${config.dbClient}`);
       console.log(
         `  IA         : ${ai.provider} / ${ai.model} (${
-          ai.configured ? 'configurée' : 'non configurée, repli mock'
+          ai.configured
+            ? 'configurée'
+            : ai.fallback
+              ? 'non configurée, repli mock'
+              : 'non configurée'
         })`
       );
       console.log(`  Scheduler  : ${schedulerTask ? 'démarré' : 'non démarré'}`);

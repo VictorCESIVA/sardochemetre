@@ -68,6 +68,7 @@ Les fichiers `.env` sont ignorés par Git. Ne versionnez jamais de clé réelle.
 | `ANALYZE_RATE_LIMIT` | `10` | Requêtes d'analyse par IP et par fenêtre. |
 | `ANALYZE_RATE_WINDOW_MS` | `60000` | Durée de la fenêtre de limitation (ms). |
 | `TRUST_PROXY` | — | `1` (ou un nombre de sauts) derrière un proxy de confiance. |
+| `ANALYZE_API_KEY` | — | Clé partagée optionnelle pour `POST /api/ai/analyze` et `POST /api/tweets/analyze` (`Authorization: Bearer` ou `x-analyze-key`). |
 | `TWITTER_SOURCE` | `profile` | `profile`, `syndication`, `x` ou `mock`. Voir la section 5. |
 | `TWITTER_SYNC_LIMIT` | `5` | Tweets récupérés par cycle ou par `npm run sync` (1–50 ; `profile` plafonne à 5). |
 | `TWITTER_BEARER_TOKEN` | — | Bearer Token de l'API X v2 ; requis uniquement pour `TWITTER_SOURCE=x`. |
@@ -134,10 +135,11 @@ curl http://localhost:3001/api/ai/status
 ```
 
 Sans clé, le statut signale une configuration incomplète, le scheduler ne démarre
-pas et `POST /api/ai/analyze` répond `503`. Les tweets déjà analysés restent
-consultables et le bouton de réanalyse est masqué. Le fallback d'analyse de test
-reste toutefois accessible par un appel direct à `POST /api/tweets/analyze` : ne
-l'exposez pas sans protection.
+pas et les routes POST d'analyse répondent `503 AI_NOT_CONFIGURED`. Les tweets déjà
+analysés restent consultables et le bouton de réanalyse est masqué. Le repli mock
+n'est autorisé qu'en test ou en démo ; en production, aucune analyse simulée n'est
+persistée. Pour restreindre les routes d'analyse à un appelant authentifié, définissez
+`ANALYZE_API_KEY`.
 
 **Payg ou Go.** Le pay-as-you-go est recommandé pour cette application : il est
 prévu pour les appels API classiques et se facture à l'usage. L'offre Go est conçue
@@ -324,7 +326,7 @@ cd frontend && npm run build
 ./test-backend.sh             # tests + smoke tests si le backend tourne
 ```
 
-État attendu : **91 tests backend**, **41 tests frontend**, lint et build sans
+État attendu : **98 tests backend**, **41 tests frontend**, lint et build sans
 erreur. Les smoke tests vérifient le premier tweet réellement présent, son détail, une
 recherche, le profil, les statistiques et le BullshitMètre.
 

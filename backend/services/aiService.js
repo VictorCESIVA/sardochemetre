@@ -72,13 +72,30 @@ function resolveProvider(env = process.env) {
   return { provider: 'mock', model: 'mock', configured: false, fallback: 'mock' };
 }
 
+/**
+ * Le repli mock est un outil de test/démo. En production, une clé manquante
+ * doit produire une erreur visible : accepter une analyse simulée permettrait
+ * de persister de fausses analyses dans la base.
+ */
+function mockFallbackAllowed(env) {
+  if (String(env.NODE_ENV || '').trim().toLowerCase() === 'test') return true;
+  if (String(env.DEMO_MODE || '').trim().toLowerCase() === 'true') return true;
+  return String(env.AI_PROVIDER || '').trim().toLowerCase() === 'mock';
+}
+
 function getStatus(env = process.env) {
-  return resolveProvider(env);
+  const status = resolveProvider(env);
+
+  return {
+    ...status,
+    fallback: status.fallback && mockFallbackAllowed(env) ? status.fallback : null,
+    analysisProtected: Boolean(String(env.ANALYZE_API_KEY || '').trim()),
+  };
 }
 
 /**
- * Analyse pour les routes tweets : repli mock uniquement si aucun
- * provider réel n'est configuré. DEMO_MODE ne court-circuite pas l'IA.
+ * Analyse pour les routes tweets : repli mock uniquement en test, en démo ou
+ * avec AI_PROVIDER=mock explicite. DEMO_MODE ne court-circuite pas l'IA.
  */
 async function analyzeTweet(content, options = {}) {
   const env = options.env || process.env;
@@ -92,7 +109,30 @@ async function analyzeTweet(content, options = {}) {
     return claudeService.analyzeTweet(content);
   }
 
+  if (!mockFallbackAllowed(env)) return null;
+
   return claudeService.generateMockAnalysis(content);
+}
+
+/**
+ * Décrit l'erreur HTTP à renvoyer quand `analyzeTweet` n'a produit aucune
+ * analyse : configuration absente (503) ou échec du provider (502).
+ */
+function getAnalysisFailure(env = process.env) {
+  if (!getStatus(env).configured) {
+    return {
+      status: 503,
+      code: 'AI_NOT_CONFIGURED',
+      error:
+        'Clé IA non configurée : ajoutez OPENCODE_API_KEY ou ANTHROPIC_API_KEY dans backend/.env.',
+    };
+  }
+
+  return {
+    status: 502,
+    code: 'AI_PROVIDER_ERROR',
+    error: 'Le provider IA n’a pas renvoyé d’analyse exploitable.',
+  };
 }
 
 /**
@@ -142,6 +182,7 @@ module.exports = {
   getStatus,
   analyzeTweet,
   analyzeWithRealProvider,
+  getAnalysisFailure,
   createAiError,
   PROVIDERS,
 };

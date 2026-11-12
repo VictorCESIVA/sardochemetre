@@ -9,6 +9,7 @@ const {
   createRateLimiter,
   resolveTrustProxy,
 } = require('./middleware/rateLimit');
+const { createAnalysisAuth } = require('./middleware/analysisAuth');
 
 /**
  * Le seed de démo n'a de sens que si la source de tweets est le mock.
@@ -82,9 +83,12 @@ function createApp() {
   app.use(express.urlencoded({ extended: true, limit: '64kb' }));
 
   // Un seul compteur par IP pour toutes les routes d'analyse facturées.
+  // L'authentification optionnelle est vérifiée après la limite de débit pour
+  // que les tentatives invalides ne permettent pas de contourner le compteur.
   const analyzeLimiter = createRateLimiter();
-  app.use('/api/ai/analyze', analyzeLimiter);
-  app.use('/api/tweets/analyze', analyzeLimiter);
+  const analysisAuth = createAnalysisAuth();
+  app.use('/api/ai/analyze', analyzeLimiter, analysisAuth);
+  app.use('/api/tweets/analyze', analyzeLimiter, analysisAuth);
 
   app.get('/health', (req, res) => {
     const ai = aiService.getStatus();

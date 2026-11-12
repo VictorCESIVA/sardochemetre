@@ -154,11 +154,12 @@ Le comportement attendu est le suivant :
 - les tweets déjà collectés et analysés restent consultables ;
 - le bouton de réanalyse est masqué.
 
-Aucune analyse mock n'est présentée comme réelle dans l'interface. Le service
-d'analyse conserve toutefois un repli déterministe pour les tests : le bouton de
-réanalyse n'apparaît pas sans clé, mais un appel direct à
-`POST /api/tweets/analyze` sans configuration IA peut l'emprunter. En production,
-exigez une clé et protégez la route.
+Aucune analyse mock n'est présentée comme réelle dans l'interface. Le repli
+déterministe est réservé aux tests et à la démo (`NODE_ENV=test`, `DEMO_MODE=true`
+ou `AI_PROVIDER=mock`) : en production, `POST /api/tweets/analyze` répond
+`503 AI_NOT_CONFIGURED` sans provider et n'écrit rien en base. Pour restreindre les
+routes d'analyse à un appelant authentifié, définissez `ANALYZE_API_KEY` ; le
+frontend masque alors le bouton de réanalyse.
 
 ## Limites
 

@@ -114,13 +114,13 @@ test('resolveProvider : AI_PROVIDER explicite, clé manquante non configurée', 
   assert.equal(opencodeExplicit.configured, true);
 });
 
-test('analyzeTweet : repli mock sans clé, même hors DEMO_MODE', async () => {
+test('analyzeTweet : repli mock en démo uniquement sans provider', async () => {
   const content = 'Les licornes existent, ma source est mon voisin.';
 
   const analysis = await aiService.analyzeTweet(content, {
     env: { DEMO_MODE: 'false' },
   });
-  assert.deepEqual(analysis, generateMockAnalysis(content));
+  assert.equal(analysis, null);
 
   const demo = await aiService.analyzeTweet(content, {
     env: { DEMO_MODE: 'true' },
@@ -212,4 +212,38 @@ test('analyzeWithRealProvider : succès OpenCode et erreur provider typée', asy
   } finally {
     await closeServer(server);
   }
+});
+
+test('analyzeTweet : pas de repli mock implicite en production', async () => {
+  const content = 'Les licornes existent, ma source est mon voisin.';
+
+  const analysis = await aiService.analyzeTweet(content, {
+    env: { NODE_ENV: 'production', DEMO_MODE: 'false' },
+  });
+  assert.equal(analysis, null);
+
+  const explicit = await aiService.analyzeTweet(content, {
+    env: {
+      NODE_ENV: 'production',
+      DEMO_MODE: 'false',
+      AI_PROVIDER: 'mock',
+    },
+  });
+  assert.deepEqual(explicit, generateMockAnalysis(content));
+});
+
+test('getAnalysisFailure : 503 sans configuration, 502 avec provider en échec', () => {
+  assert.deepEqual(aiService.getAnalysisFailure({ NODE_ENV: 'production' }), {
+    status: 503,
+    code: 'AI_NOT_CONFIGURED',
+    error:
+      'Clé IA non configurée : ajoutez OPENCODE_API_KEY ou ANTHROPIC_API_KEY dans backend/.env.',
+  });
+
+  assert.equal(
+    aiService.getAnalysisFailure({
+      OPENCODE_API_KEY: 'oc_sk_test',
+    }).status,
+    502
+  );
 });

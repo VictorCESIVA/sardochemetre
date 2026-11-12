@@ -384,15 +384,22 @@ quittent jamais le serveur.
 | Méthode | Route | Rôle |
 | --- | --- | --- |
 | `GET` | `/api/ai/status` | Indique si le provider est configuré, le modèle actif, l'offre et la raison d'une indisponibilité. |
-| `POST` | `/api/ai/analyze` | Reçoit le contenu à analyser, appelle OpenCode et renvoie une analyse normalisée. Répond `503` sans configuration. |
-| `POST` | `/api/tweets/analyze` | Variante utilisée par le frontend : analyse et persiste le résultat quand `tweet_id` existe. |
+| `POST` | `/api/ai/analyze` | Reçoit le contenu à analyser, appelle OpenCode et renvoie une analyse normalisée. Répond `401` si `ANALYZE_API_KEY` est définie sans clé valide, `503` sans configuration. |
+| `POST` | `/api/tweets/analyze` | Variante utilisée par le frontend : analyse et persiste le résultat quand `tweet_id` existe. Même authentification optionnelle ; `503` sans provider en production. |
 
 La réponse d'analyse suit le même format que les analyses stockées : score borné à
 0–100, verdict normalisé, raisonnement, fact-checks et punchline.
 
 ## Sécurité et limites
 
-- **Pas d'authentification** : toutes les routes sont publiques.
+- **Authentification optionnelle** : sans `ANALYZE_API_KEY`, toutes les routes sont
+  publiques. Si la variable est définie, les deux routes POST d'analyse exigent
+  `Authorization: Bearer <clé>` ou `x-analyze-key` et répondent `401
+  ANALYSIS_AUTH_REQUIRED` sinon. `GET /api/ai/status` expose seulement
+  `analysisProtected`, jamais la clé. Le frontend masque la réanalyse dans ce cas.
+- **Pas de repli mock en production** : `analyzeTweet` ne génère une analyse simulée
+  que si `NODE_ENV=test`, `DEMO_MODE=true` ou `AI_PROVIDER=mock`. Sinon l'absence de
+  provider produit `503 AI_NOT_CONFIGURED` et un échec fournisseur `502`.
 - **Rate limiting** : `POST /api/ai/analyze` et `POST /api/tweets/analyze` partagent
   un compteur en mémoire par adresse IP (10 requêtes par minute par défaut),
   configurable avec `ANALYZE_RATE_LIMIT` et `ANALYZE_RATE_WINDOW_MS`. Au-delà, la

@@ -3,7 +3,10 @@
 const express = require('express');
 const { getPool, getProfile } = require('../db/postgres');
 const { normalizePeriod } = require('../db/periods');
-const { analyzeTweet } = require('../services/aiService');
+const {
+  analyzeTweet,
+  getAnalysisFailure,
+} = require('../services/aiService');
 
 const TWEET_SELECT = `
   SELECT
@@ -411,7 +414,11 @@ function createTweetsRouter() {
 
       const analysis = await analyzeTweet(content);
       if (!analysis) {
-        return res.status(500).json({ error: 'Analysis failed' });
+        const failure = getAnalysisFailure();
+        return res.status(failure.status).json({
+          error: failure.error,
+          code: failure.code,
+        });
       }
 
       const tweetId =

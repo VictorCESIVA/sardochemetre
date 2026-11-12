@@ -171,6 +171,7 @@ test('GET /api/ai/status : provider OpenCode non configuré', async () => {
     configured: false,
     fallback: 'mock',
     plan: 'payg',
+    analysisProtected: false,
   });
   assert.equal(JSON.stringify(body).includes('oc_sk_'), false);
 });

@@ -96,7 +96,7 @@ archive/                 # ancien squelette de projet
 cd backend
 npm start                # serveur
 npm run dev              # serveur avec rechargement
-npm test                 # 91 tests
+npm test                 # 98 tests
 npm run sync             # collecte les tweets de la source configurée
 npm run sync:analyze     # collecte + analyse les nouveaux tweets
 npm run seed             # données mock (tests uniquement)
@@ -215,6 +215,7 @@ CRON_RUN_ON_START=false
 ANALYZE_RATE_LIMIT=10
 ANALYZE_RATE_WINDOW_MS=60000
 # TRUST_PROXY=1            # derrière Railway/Render
+# ANALYZE_API_KEY=...      # protège les routes POST d'analyse (Bearer / x-analyze-key)
 AI_PROVIDER=opencode
 OPENCODE_API_KEY=oc_sk_...
 OPENCODE_MODEL=deepseek-v4.1-flash
@@ -241,8 +242,11 @@ nécessaire.
 - Ne jamais exposer de clé IA dans le frontend. Seules les variables `VITE_*`
   publiques sont autorisées ; la clé OpenCode reste côté backend.
 - Les routes `/api/ai/analyze` et `/api/tweets/analyze` utilisent une clé payante :
-  le rate limiting en mémoire (10 req/IP/min) est actif ; une authentification reste
-  à prévoir avant une exposition publique à grande échelle.
+  le rate limiting en mémoire (10 req/IP/min) est toujours actif. `ANALYZE_API_KEY`
+  ajoute une authentification optionnelle ; quand elle est définie, le frontend
+  masque la réanalyse.
+- Le repli mock de `/api/tweets/analyze` est interdit en production : il n'est
+  autorisé qu'avec `NODE_ENV=test`, `DEMO_MODE=true` ou `AI_PROVIDER=mock`.
 - Les appels Twitter/IA ne doivent pas bloquer le démarrage du serveur ni faire
   tomber le processus.
 - Le scheduler ne doit pas être dupliqué sur plusieurs instances.
@@ -254,8 +258,8 @@ nécessaire.
 
 ## Tests
 
-- Backend : **91 tests** (`node --test test/*.test.js`, `npm test`).
-- Frontend : **40 tests** (`vitest run`, `npm test`).
+- Backend : **98 tests** (`node --test test/*.test.js`, `npm test`).
+- Frontend : **41 tests** (`vitest run`, `npm test`).
 - `npm run lint` et `npm run build` passent.
 - `npm audit` ne signale aucune vulnérabilité connue au moment de la rédaction.
 - `./test-install.sh` enchaîne tests, lint et build.
@@ -270,14 +274,16 @@ nécessaire.
 - **Cinq tweets par cycle** : la source `profile` est plafonnée à 5 ; la base ne
   grandit que des tweets observés.
 - PostgreSQL est implémenté mais n'a pas été exécuté ici contre un serveur réel.
-- Pas d'authentification ; les routes d'analyse sont publiques et payantes, mais
-  limitées en mémoire à 10 requêtes par IP et par minute (`ANALYZE_RATE_LIMIT`). Le
-  compteur est propre à chaque instance et ne remplace pas une authentification.
+- Authentification optionnelle : sans `ANALYZE_API_KEY`, les routes d'analyse sont
+  publiques et payantes, limitées en mémoire à 10 requêtes par IP et par minute
+  (`ANALYZE_RATE_LIMIT`). Le compteur est propre à chaque instance ; une limite
+  partagée reste à prévoir en multi-instance.
 - SQLite est mono-instance et nécessite un disque persistant en production.
 - L'IA est faillible : elle peut se tromper, inventer une source ou mal interpréter
   un tweet.
-- Un repli d'analyse déterministe subsiste pour les tests ; l'interface ne l'utilise
-  pas, mais `POST /api/tweets/analyze` peut l'emprunter sans clé. Protéger la route.
+- Le repli d'analyse déterministe est limité aux tests et à la démo
+  (`NODE_ENV=test`, `DEMO_MODE=true` ou `AI_PROVIDER=mock`). En production,
+  `POST /api/tweets/analyze` répond `503` sans provider et n'écrit rien en base.
 - L'offre Go est supportée mais destinée aux agents de codage ; le payg est
   recommandé pour un service public.
 

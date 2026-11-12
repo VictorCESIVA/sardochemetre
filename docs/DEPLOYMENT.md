@@ -95,6 +95,7 @@ CORS_ORIGIN=https://votre-frontend.example
 TRUST_PROXY=1
 ANALYZE_RATE_LIMIT=10
 ANALYZE_RATE_WINDOW_MS=60000
+# ANALYZE_API_KEY=...       # protège les routes POST d'analyse
 
 TWITTER_SOURCE=profile
 TWITTER_SYNC_LIMIT=5
@@ -168,8 +169,10 @@ Les appels sont facturés selon l'offre OpenCode. Les routes d'analyse sont prot
 par un rate limiting en mémoire (10 requêtes par IP et par minute par défaut,
 `ANALYZE_RATE_LIMIT` et `ANALYZE_RATE_WINDOW_MS`). Derrière le proxy de la plateforme,
 activez `TRUST_PROXY=1` pour que la limite s'applique par IP réelle. Le compteur est
-propre à chaque instance : ajoutez une authentification ou un limiteur partagé si le
-backend est public et multi-instance. Voir [`AI_MODE.md`](AI_MODE.md) pour les tarifs
+propre à chaque instance : ajoutez un limiteur partagé si le backend est public et
+multi-instance. `ANALYZE_API_KEY` permet d'exiger une clé partagée
+(`Authorization: Bearer` ou `x-analyze-key`) sur les routes POST d'analyse et de
+masquer la réanalyse côté frontend. Voir [`AI_MODE.md`](AI_MODE.md) pour les tarifs
 indicatifs.
 
 ## 5. SQLite avec disque persistant
@@ -284,8 +287,8 @@ un scheduler externe. Si la collecte `profile` échoue de façon répétée, bas
 - [ ] `OPENCODE_API_KEY` uniquement côté backend, jamais dans `VITE_*`.
 - [ ] `CORS_ORIGIN` restreint au domaine du frontend.
 - [ ] Aucun `.env` ni secret versionné.
-- [ ] `POST /api/ai/analyze` et `POST /api/tweets/analyze` protégés
-      (authentification, rate limiting ou désactivation) si le backend est public.
+- [ ] `POST /api/ai/analyze` et `POST /api/tweets/analyze` protégés par rate
+      limiting et, si le backend est public, par `ANALYZE_API_KEY`.
 - [ ] `TRUST_PROXY` adapté au proxy de la plateforme et limite de débit vérifiée
       (`ANALYZE_RATE_LIMIT`, `ANALYZE_RATE_WINDOW_MS`).
 - [ ] `NODE_ENV=production`.

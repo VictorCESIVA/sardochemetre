@@ -6,7 +6,7 @@
  * Les routes `POST /api/ai/analyze` et `POST /api/tweets/analyze` appellent un
  * provider facturé. Sans protection, un appelant peut épuiser les crédits.
  * Le compteur est tenu par processus et par adresse IP : il ne remplace pas
- * une authentification, il borne l'abus et le coût.
+ * une authentification (voir `analysisAuth.js`), il borne l'abus et le coût.
  */
 
 const DEFAULT_LIMIT = 10;
