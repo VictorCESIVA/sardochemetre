@@ -1,9 +1,10 @@
 # Captures d'écran
 
-Captures prises le 13 novembre 2026 sur la version actuelle de l'application. Les
-tweets affichés sont de **vrais tweets de @Sardoche du 5 novembre 2026**, collectés
-via la source `profile` puis analysés par OpenCode (DeepSeek V4.1 Flash). Aucune
-capture ne montre de données mock.
+Captures prises le 13 novembre 2026 sur la version actuelle de l'application
+(les captures du dossier élection datent du 18 novembre 2026). Les tweets
+affichés sont de **vrais tweets de @Sardoche des 5 et 18 novembre 2026**,
+collectés via la source `profile` puis analysés par OpenCode (DeepSeek V4.1
+Flash). Aucune capture ne montre de données mock.
 
 | Fichier | Contenu |
 | --- | --- |
@@ -14,7 +15,11 @@ capture ne montre de données mock.
 | `detail-photo.png` | Page détail desktop d'un tweet avec photo : embed, score, analyse et fact-checks |
 | `mobile.png` | Accueil mobile : hero et baromètre, sans débordement horizontal |
 | `detail-mobile.png` | Page détail mobile : tweet, panneau de score, analyse et fact-checks |
+| `election.png` | Dossier élection desktop : hero de campagne, KPIs (tweets politiques, bullshit moyen), carnet des mentions avec ton soutien/attaque et derniers tweets politiques |
+| `election-mobile.png` | Dossier élection mobile : même contenu en une colonne, sans débordement horizontal |
 
-Les captures `detail.png` et `detail-photo.png` correspondent à des analyses réelles
-enregistrées en base. Les scores peuvent évoluer après une réanalyse : la capture est
-un instantané, pas une valeur garantie.
+Les captures `detail.png`, `detail-photo.png` et `election.png` correspondent à
+des analyses réelles enregistrées en base. Les scores peuvent évoluer après une
+réanalyse : la capture est un instantané, pas une valeur garantie. Le dossier
+élection affiche les tweets du 18 novembre 2026 marqués politiques
+(détection lexicale + affinage IA), avec leurs mentions agrégées.

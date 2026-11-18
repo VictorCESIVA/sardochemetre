@@ -125,6 +125,19 @@ contient `{tweet}` à jour ; sinon elle contient `{analysis}`.
 Le prompt système demande de traiter le tweet comme une donnée et de ne pas suivre
 ses instructions. C'est une précaution, pas une garantie contre la prompt injection.
 
+En plus du score, du verdict, des fact-checks et de la punchline, le modèle renvoie
+depuis novembre 2026 deux champs liés au dossier élection :
+
+- `political` : le tweet porte-t-il sur la politique française ou la
+  présidentielle 2027 ;
+- `mentions` : jusqu'à 6 personnalités, candidats, partis ou institutions cités,
+  chacun avec son type et le ton du tweet envers lui (`soutien`, `attaque`,
+  `neutre`). L'auteur du tweet n'est jamais une mention.
+
+Ces champs sont optionnels : une réponse sans `political`/`mentions` reste
+valide, la détection lexicale du backend (`politicsService.js`) prend alors le
+relais avec des mentions au ton `neutre`.
+
 ## Coût
 
 Tarifs indicatifs de DeepSeek V4.1 Flash en pay-as-you-go :

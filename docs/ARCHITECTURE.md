@@ -62,8 +62,8 @@ la page 404 applicative.
 3. Les routes IA sont montées séparément et utilisent `services/aiService.js`.
 4. Express applique CORS, puis les parsers JSON et URL-encoded avec une limite de
    64 ko.
-5. Les routes fixes (`/stats`, `/bullshitmetre`, `/search`, `/analyze`) sont
-   déclarées avant `/:id` pour éviter les collisions.
+5. Les routes fixes (`/stats`, `/bullshitmetre`, `/election`, `/search`,
+   `/analyze`) sont déclarées avant `/:id` pour éviter les collisions.
 6. `GET /api/profile` lit la ligne unique de la table `profile` et renvoie `404` si
    elle est absente.
 7. Une route inconnue renvoie `404 {error}`. Le middleware d'erreur renvoie `{error}`
@@ -216,6 +216,7 @@ tweets
   quoted_tweet  JSONB / TEXT JSON  (objet ou NULL)
   reply_to      JSONB / TEXT JSON  (tweet parent ou NULL)
   source        TEXT               (profile, syndication, x, mock)
+  political     BOOLEAN / INTEGER  (tweet politique, détection électorale)
   analyzed      BOOLEAN / INTEGER
   fetched_at / created_at
 
@@ -235,6 +236,7 @@ analyses
   verdict       VRAI | DOUTEUX | BULLSHIT | CHAUD BOUILLANT
   reasoning     TEXT
   fact_checks   JSONB (PostgreSQL) / TEXT JSON (SQLite)
+  mentions      JSONB / TEXT JSON  (personnalités citées avec leur ton)
   humor_comment TEXT
   analyzed_at   TIMESTAMP
 
@@ -278,6 +280,34 @@ La recherche est un `LIKE` insensible à la casse sur `tweets.content`, avec
 paginée accepte `q` ; `GET /api/tweets/search` reste disponible comme recherche
 simple.
 
+### Dossier élection 2027
+
+`services/politicsService.js` contient le dictionnaire électoral : candidats
+déclarés de la présidentielle 2027, partis, institutions et thèmes du débat
+public (retraites, déficit, immigration…). La correspondance est préfixe avec
+borne de mot, insensible aux accents et à la casse : « candidat » détecte
+« candidats », mais « rn » ne matche pas « tournant ».
+
+Deux niveaux de traitement :
+
+1. **Détection lexicale, sans clé IA** : `saveTweet` marque
+   `tweets.political` à l'import ; les analyses existantes reçoivent les
+   mentions extraites du texte avec le ton `neutre` (le dictionnaire ne devine
+   jamais l'intention). Un backfill dans `db/schema.js` migre les tweets
+   antérieurs à la fonctionnalité au premier démarrage.
+2. **Affinage IA** : le prompt d'analyse renvoie `political` et des `mentions`
+   avec leur ton (`soutien`, `attaque`, `neutre`), uniquement sur la base du
+   tweet et de son contexte. L'auteur du tweet n'est jamais une mention.
+
+`GET /api/tweets?theme=politics` filtre la liste ; `GET /api/tweets/election`
+agrège le tableau de bord (compteur, score moyen des tweets politiques,
+mentions groupées par libellé avec les identifiants de tweets) consommé par la
+page frontend `/election`. Le seed de démo et le provider mock utilisent le
+même dictionnaire : le dossier fonctionne aussi sans clé IA.
+
+Le dictionnaire est un choix éditorial assumé : il doit suivre les
+candidatures officielles et rester factuel dans ses libellés.
+
 ### Seed de test
 
 `db/mock-data.js` lit `backend/mock/tweets.json`, trie les tweets et remplace leurs
@@ -313,7 +343,7 @@ scheduler.
 - `DATABASE_URL` obligatoire.
 - Schéma géré par `npm run migrate` (`001_initial_schema.sql`,
   `002_tweet_source.sql`, `003_profile_embed.sql`, `004_scheduler_lease.sql`,
-  `005_reply_context.sql`).
+  `005_reply_context.sql`, `006_election_context.sql`).
 - Les routes sont asynchrones et utilisent des requêtes paramétrées.
 - Le schéma et les requêtes sont implémentés, mais ce chemin n'a pas été exécuté ici
   contre un serveur PostgreSQL réel.
@@ -324,9 +354,10 @@ scheduler.
 | --- | --- | --- |
 | `GET` | `/health` | `{status, timestamp, mode, database, ai}` |
 | `GET` | `/api/profile` | `{profile}` ou `404` |
-| `GET` | `/api/tweets?page=&limit=&period=&q=` | `{tweets, pagination, period, query}` |
+| `GET` | `/api/tweets?page=&limit=&period=&q=&theme=politics` | `{tweets, pagination, period, query, theme}` ; thème inconnu : `400` |
 | `GET` | `/api/tweets/stats?period=` | `{period, avgScore, minScore, maxScore, totalAnalyzed, verdictDistribution}` |
 | `GET` | `/api/tweets/bullshitmetre?period=` | `{period, globalScore, level, sampleSize, timestamp}` |
+| `GET` | `/api/tweets/election?period=&limit=` | `{period, politicalCount, totalAnalyzed, avgPoliticalScore, mentions, tweets, updatedAt}` |
 | `GET` | `/api/tweets/search?q=` | `{tweets, total}` |
 | `GET` | `/api/tweets/:id` | `{tweet}` ou `404` |
 | `POST` | `/api/tweets/analyze` | `{tweet}` si `tweet_id` existe, sinon `{analysis}` |
@@ -366,10 +397,12 @@ Forme de tweet plate :
   "quoted_tweet": null,
   "reply_to": null,
   "analyzed": true,
+  "political": true,
   "bullshit_score": 3,
   "verdict": "VRAI",
   "reasoning": "…",
   "fact_checks": [],
+  "mentions": [{ "label": "…", "type": "candidat", "stance": "neutre" }],
   "humor_comment": "…",
   "analyzed_at": "2026-11-06T14:27:52.877Z"
 }

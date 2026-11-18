@@ -29,9 +29,14 @@ par IA.
 | --- |
 | ![Détail d'un tweet sur mobile](docs/screenshots/detail-mobile.png) |
 
-Les captures ont été prises le 13 novembre 2026. Les tweets affichés sont de **vrais
-tweets de @Sardoche du 5 novembre 2026**, pas des données de test. Le détail
-de l'inventaire se trouve dans [`docs/screenshots/README.md`](docs/screenshots/README.md).
+| Dossier « Élection 2027 » — desktop | Dossier « Élection 2027 » — mobile |
+| --- | --- |
+| ![Dossier élection : KPIs, mentions et tweets politiques](docs/screenshots/election.png) | ![Dossier élection sur mobile](docs/screenshots/election-mobile.png) |
+
+Les captures ont été prises le 13 novembre 2026 (dossier élection : 18 novembre
+2026). Les tweets affichés sont de **vrais tweets de @Sardoche**, pas des données
+de test. Le détail de l'inventaire se trouve dans
+[`docs/screenshots/README.md`](docs/screenshots/README.md).
 
 ## Fonctionnalités
 
@@ -57,6 +62,12 @@ de l'inventaire se trouve dans [`docs/screenshots/README.md`](docs/screenshots/R
   et état de l'IA à droite), analyse, fact-checks et pull quote en pleine largeur.
 - **Réanalyse IA** : un bouton permet de relancer l'analyse d'un tweet avec
   DeepSeek V4.1 Flash ; le résultat est persisté.
+- **Dossier « Élection 2027 »** : les tweets politiques sont repérés
+  automatiquement (candidats, partis, institutions, thèmes du débat public),
+  l'IA détermine le ton envers chaque personnalité mentionnée (soutien,
+  attaque, neutre) et une page dédiée agrège le tout : qui est cité, qui est
+  chargé, score de bullshit moyen des tweets en campagne. Fonctionne sans
+  clé IA (détection lexicale seule, ton « non tranché »).
 - **Interface sombre et responsive** : titres Archivo Black, texte Space Grotesk,
   données IBM Plex Mono, accent vert acide, tableau de bord et archives en cartes.
 - **404 et états d'erreur** : page inconnue, tweet introuvable, backend indisponible,
@@ -282,7 +293,7 @@ cd frontend && npm run build
 ./test-install.sh
 ```
 
-État actuel de la suite : **115 tests backend** et **41 tests frontend**, lint et
+État actuel de la suite : **131 tests backend** et **48 tests frontend**, lint et
 build sans erreur. Le backend est propre côté `npm audit` ; le frontend signale
 le ReDoS picomatch (CVE-2026-112366) dans les devDependencies vite/vitest :
 aucune version corrigée n'est publiée à ce jour et le bundle de production
@@ -315,9 +326,10 @@ ce tweet, recherche d'un mot-clé réel, profil, statistiques et BullshitMètre.
 │   │   ├── twitterService.js  # Sources profile, syndication, x, mock
 │   │   ├── opencodeService.js # Appels OpenCode et normalisation
 │   │   ├── aiService.js       # Sélection du provider
+│   │   ├── politicsService.js # Détection électorale et mentions (dictionnaire 2027)
 │   │   ├── schedulerLock.js   # Bail renouvelable du scheduler
 │   │   └── claudeService.js   # Prompt, parsing et provider Anthropic historique
-│   ├── migrations/            # Migrations PostgreSQL (profil, embed, bail)
+│   ├── migrations/            # Migrations PostgreSQL (profil, embed, bail, élection)
 │   ├── mock/tweets.json       # Tweets de test
 │   └── test/                  # Tests node:test
 ├── frontend/
@@ -325,7 +337,7 @@ ce tweet, recherche d'un mot-clé réel, profil, statistiques et BullshitMètre.
 │   │   ├── components/        # TweetEmbed, TweetAvatar, VerifiedBadge,
 │   │   │                      # TweetMedia, QuotedTweet, TweetText, BullshitMètre…
 │   │   ├── lib/               # Normalisation, profil, formatage, calculs
-│   │   ├── pages/             # Home, TweetDetail
+│   │   ├── pages/             # Home, Election, TweetDetail
 │   │   └── services/          # Client API (tweets, profil, IA)
 │   ├── public/                # Favicon, avatars, rewrites Netlify
 │   └── vercel.json            # Rewrite SPA Vercel
@@ -348,9 +360,10 @@ JSON ; les erreurs utilisent la forme `{ "error": "..." }`.
 | --- | --- | --- |
 | `GET` | `/health` | `{status, timestamp, mode, database, ai}`. `mode` vaut `demo` ou `production` (compatibilité), `database` `sqlite` ou `postgres`, `ai` expose le provider, le modèle et la configuration. |
 | `GET` | `/api/profile` | `{profile}` : `username`, `name`, `avatar_url`, `verified`, `followers`, `updated_at`. `404` si aucun profil n'a encore été collecté. |
-| `GET` | `/api/tweets?page=1&limit=20&period=day\|week\|month\|all&q=` | Liste paginée des tweets analysés. Réponse `{tweets, pagination, period, query}` ; `limit` est borné à 100. |
+| `GET` | `/api/tweets?page=1&limit=20&period=day\|week\|month\|all&q=&theme=politics` | Liste paginée des tweets analysés. Réponse `{tweets, pagination, period, query, theme}` ; `limit` est borné à 100. `theme=politics` ne renvoie que les tweets marqués politiques (400 si le thème est inconnu). |
 | `GET` | `/api/tweets/stats?period=` | `{period, avgScore, minScore, maxScore, totalAnalyzed, verdictDistribution}`. |
 | `GET` | `/api/tweets/bullshitmetre?period=` | `{period, globalScore, level, sampleSize, timestamp}`. Niveaux : `FAIBLE` (< 25), `MODÉRÉ` (< 50), `ÉLEVÉ` (< 75), `CRITIQUE` (≥ 75). |
+| `GET` | `/api/tweets/election?period=&limit=10` | Dossier élection : `{period, politicalCount, totalAnalyzed, avgPoliticalScore, mentions, tweets, updatedAt}`. `mentions` agrège les personnalités, partis et institutions cités dans les tweets politiques avec leur ton (`soutien`, `attaque`, `neutre`) et les identifiants des tweets concernés. |
 | `GET` | `/api/tweets/search?q=` | `{tweets, total}` — recherche simple sur le contenu. |
 | `GET` | `/api/tweets/:id` | `{tweet}` ou `404` avec `{error}`. |
 | `POST` | `/api/tweets/analyze` | Corps `{content, tweet_id?}`. `content` est obligatoire et limité à 1000 caractères. Si `tweet_id` existe en base, son contexte (parent, citation, images) est envoyé au modèle et le tweet analysé est retourné ; sinon `{analysis}`. `401` si `ANALYZE_API_KEY` est définie et absente/invalide, `503` sans provider IA configuré. |
@@ -407,10 +420,18 @@ Forme d'un tweet (plate) :
     ]
   },
   "analyzed": true,
+  "political": true,
   "bullshit_score": 86,
   "verdict": "BULLSHIT",
   "reasoning": "…",
   "fact_checks": [{ "claim": "…", "verdict": "faux", "note": "…" }],
+  "mentions": [
+    {
+      "label": "David Lisnard",
+      "type": "candidat",
+      "stance": "soutien"
+    }
+  ],
   "humor_comment": "…",
   "analyzed_at": "2026-11-06T14:44:23.799Z"
 }
@@ -452,6 +473,13 @@ Le détail est dans [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
   via une autre source ; la base ne grandit donc que des tweets observés.
 - **IA faillible** : le modèle peut se tromper, inventer une source ou mal interpréter
   un tweet. Les réponses invalides sont rejetées, pas les erreurs de jugement.
+- **Dossier élection indicatif** : la détection politique est lexicale (candidats,
+  partis, thèmes du débat public listés dans `politicsService.js`) et le ton
+  « soutien / attaque » est une lecture d'IA. Un tweet ironique peut être mal
+  classé, un thème détecté par erreur ; sans clé IA, les mentions restent
+  « neutres ». C'est un outil satirique de lecture de flux, pas un observatoire
+  électoral officiel. Le dictionnaire est calibré sur la campagne 2027 et doit
+  être tenu à jour au fil des candidatures.
 - **Repli mock limité aux tests/démo** : le service d'analyse ne produit une
   analyse simulée que si `NODE_ENV=test`, `DEMO_MODE=true` ou `AI_PROVIDER=mock`.
   En production, une clé manquante fait répondre `503 AI_NOT_CONFIGURED` et aucune

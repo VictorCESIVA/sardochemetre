@@ -25,6 +25,10 @@ analyses ne constituent pas un fact-checking professionnel.
   avec `TWITTER_BEARER_TOKEN`, et `mock` pour les tests.
 - **Scheduler** : `node-cron`, `*/5 * * * *` en configuration projet, collecte et
   analyse des nouveaux tweets.
+- **Dossier élection 2027** : détection lexicale des tweets politiques
+  (`politicsService.js`, dictionnaire calibré sur la présidentielle 2027),
+  mentions de personnalités avec ton (soutien/attaque/neutre) produites par
+  l'IA, route `GET /api/tweets/election` et page frontend `/election`.
 - **Déploiement** : frontend statique (Vercel/Netlify) + backend
   (Railway/Render) avec SQLite sur disque persistant ou PostgreSQL.
 
@@ -68,9 +72,10 @@ backend/
     twitterService.js    # sources profile, syndication, x, mock
     opencodeService.js   # appels OpenCode et normalisation
     aiService.js         # sélection du provider
+    politicsService.js   # détection électorale et mentions (dictionnaire 2027)
     schedulerLock.js     # bail renouvelable du scheduler
     claudeService.js     # prompt, parsing, provider Anthropic historique
-  migrations/            # migrations PostgreSQL (source, profil, embed, bail)
+  migrations/            # migrations PostgreSQL (source, profil, embed, bail, élection)
   mock/tweets.json       # tweets de test
   test/                  # tests node:test
 
@@ -78,8 +83,8 @@ frontend/src/
   components/            # TweetEmbed, TweetAvatar, VerifiedBadge, TweetMedia,
                          # QuotedTweet, TweetText, BullshitMètre, cartes, états…
   lib/                   # normalisation, profil, formatage, calculs
-  pages/                 # Home, TweetDetail
-  services/              # client API (tweets, profil, IA)
+  pages/                 # Home, Election, TweetDetail
+  services/              # client API (tweets, profil, IA, dossier élection)
 
 docs/                    # documentation de référence
 docs/screenshots/        # captures de l'application
@@ -98,7 +103,7 @@ archive/                 # ancien squelette de projet
 cd backend
 npm start                # serveur
 npm run dev              # serveur avec rechargement
-npm test                 # 115 tests
+npm test                 # 131 tests
 npm run sync             # collecte les tweets de la source configurée
 npm run sync:analyze     # collecte + analyse les nouveaux tweets
 npm run seed             # données mock (tests uniquement)
@@ -111,7 +116,7 @@ npm run dev
 npm run build
 npm run preview
 npm run lint
-npm test                 # 41 tests
+npm test                 # 48 tests
 
 # Vérification complète
 ./test-install.sh
@@ -124,9 +129,10 @@ npm test                 # 41 tests
 | --- | --- | --- |
 | GET | `/health` | `{status, timestamp, mode, database, ai}` |
 | GET | `/api/profile` | `{profile}` ou 404 |
-| GET | `/api/tweets?page=&limit=&period=&q=` | `{tweets, pagination, period, query}` |
+| GET | `/api/tweets?page=&limit=&period=&q=&theme=politics` | `{tweets, pagination, period, query, theme}` ; `theme=politics` filtre les tweets politiques, un thème inconnu répond 400 |
 | GET | `/api/tweets/stats?period=` | `{period, avgScore, minScore, maxScore, totalAnalyzed, verdictDistribution}` |
 | GET | `/api/tweets/bullshitmetre?period=` | `{period, globalScore, level, sampleSize, timestamp}` |
+| GET | `/api/tweets/election?period=&limit=` | `{period, politicalCount, totalAnalyzed, avgPoliticalScore, mentions, tweets, updatedAt}` |
 | GET | `/api/tweets/search?q=` | `{tweets, total}` |
 | GET | `/api/tweets/:id` | `{tweet}` ou 404 |
 | POST | `/api/tweets/analyze` | `{tweet}` si `tweet_id` existe, sinon `{analysis}` |
@@ -166,10 +172,14 @@ Forme de tweet plate :
   "quoted_tweet": null,
   "reply_to": null,
   "analyzed": true,
+  "political": true,
   "bullshit_score": 3,
   "verdict": "VRAI",
   "reasoning": "…",
   "fact_checks": [],
+  "mentions": [
+    { "label": "David Lisnard", "type": "candidat", "stance": "soutien" }
+  ],
   "humor_comment": "…",
   "analyzed_at": "…"
 }
@@ -267,13 +277,19 @@ nécessaire.
 - La source `profile` est non officielle : toute évolution du parseur doit rester
   tolérante et testée avec un HTML de référence.
 - Le ton reste satirique, pas harcelant. Pas d'attaque personnelle, pas de doxxing.
+- Le dossier élection doit rester factuel et satirique, jamais militant : le
+  dictionnaire de `politicsService.js` reflète les candidatures officielles de
+  la présidentielle 2027 (pas de jugement de valeur dans les labels), et le ton
+  soutien/attaque est attribué par l'IA tweet par tweet, jamais par le
+  dictionnaire. Toute évolution de la liste des candidats doit mettre à jour le
+  dictionnaire, les tests et la documentation.
 - Toute nouvelle route ou variable d'environnement doit être documentée dans
   `README.md` et `docs/`.
 
 ## Tests
 
-- Backend : **115 tests** (`node --test test/*.test.js`, `npm test`).
-- Frontend : **41 tests** (`vitest run`, `npm test`).
+- Backend : **131 tests** (`node --test test/*.test.js`, `npm test`).
+- Frontend : **48 tests** (`vitest run`, `npm test`).
 - `npm run lint` et `npm run build` passent.
 - `npm audit` : backend propre ; le frontend signale le ReDoS picomatch
   (CVE-2026-112366) via les devDependencies vite/vitest. Aucune version corrigée
