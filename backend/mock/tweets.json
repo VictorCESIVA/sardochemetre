@@ -14,7 +14,7 @@
         {"claim": "Dans les 6 prochains mois", "verdict": "invérifiable", "note": "Prédiction sans fondement"},
         {"claim": "C'est mathématique", "verdict": "faux", "note": "Sophisme d'autorité"}
       ],
-      "humor_comment": "C'est mathématique comme Platini est innocent : techniquement possible mais statistiquement catastrophique."
+      "humor_comment": "C'est mathématique comme une promesse électorale tenue : techniquement possible, statistiquement catastrophique."
     }
   },
   {
@@ -82,7 +82,7 @@
         {"claim": "73% des gamers préfèrent le PC", "verdict": "invérifiable", "note": "Aucune source citée, méthodologie inconnue"},
         {"claim": "Selon une étude récente", "verdict": "vague", "note": "Pas de référence à l'étude mentionnée"}
       ],
-      "humor_comment": "Une étude récente... aussi récente que mes chances de voir Benzema revenir à Lyon. Cite tes sources ou retourne farmer des V-Bucks."
+      "humor_comment": "Une étude récente... aussi vérifiable qu'une rumeur de couloir. Cite tes sources ou retourne farmer des V-Bucks."
     }
   },
   {
@@ -134,7 +134,7 @@
         {"claim": "Dans 2 ans personne ne jouera sans crypto", "verdict": "faux", "note": "Les plus gros jeux (Elden Ring, Baldur's Gate 3) n'ont pas de crypto"},
         {"claim": "C'est l'avenir", "verdict": "spéculatif", "note": "Aucune donnée ne soutient cette tendance"}
       ],
-      "humor_comment": "Prédiction aussi fiable que Mediapro payant ses droits TV. Les gens jouent pour s'amuser, pas pour transformer leur passion en MLM dégénéré."
+      "humor_comment": "Prédiction aussi fiable qu'un horoscope du dimanche. Les gens jouent pour s'amuser, pas pour transformer leur passion en MLM dégénéré."
     }
   }
 ]

@@ -47,13 +47,15 @@ Schéma attendu :
   "mentions": [
     { "label": "<nom de la personnalité, du candidat ou du parti>", "type": "<candidat|parti|institution|personnalité>", "stance": "<soutien|attaque|neutre>" }
   ],
-  "humor_comment": "<punchline sarcastique, ton commentateur foot>"
+  "humor_comment": "<punchline sarcastique et courte, style chroniqueur satirique>"
 }
 
 Règles :
 - bullshit_score mesure le niveau de désinformation : 0 = fiable, 100 = désinformation critique.
 - verdict doit être cohérent avec le score : 0-20 VRAI, 21-45 DOUTEUX, 46-89 BULLSHIT, 90-100 CHAUD BOUILLANT.
 - fact_checks contient 1 à 5 affirmations réellement présentes dans le tweet.
+- humor_comment est une punchline courte et cinglante, sans métaphore sportive
+  (pas de football, pas de sport) et sans citation de match ou de joueur.
 - Si une affirmation n'est pas vérifiable, dis-le explicitement au lieu d'inventer une source.
 - mentions liste jusqu'à 6 personnalités, candidats, partis ou institutions réellement nommés ou clairement désignés dans le tweet (y compris dans le tweet cité ou parent). Pas de déduction gratuite. N'inclus jamais l'auteur du tweet lui-même : il est l'objet de l'analyse, pas une mention.
 - stance traduit le ton du tweet envers la personne ou le parti cité, uniquement sur la base de ce tweet : soutien si le tweet les défend ou les encense, attaque s'il les critique ou les tourne en dérision, neutre sinon.
@@ -231,13 +233,13 @@ function generateMockAnalysis(tweetContent) {
     reasoning =
       'Le tweet contient une affirmation globalement plausible et peu de prétentions factuelles absolues. Aucun sophisme majeur n’est détecté.';
     humorComment =
-      'Un tweet raisonnable sur internet : profitez-en, ça arrive moins souvent qu’une victoire de l’OL.';
+      'Un tweet raisonnable sur internet : rare, précieux, presque émouvant.';
     checkVerdict = 'plausible';
   } else if (verdict === 'DOUTEUX') {
     reasoning =
       'Le tweet mélange des éléments crédibles et des généralisations non étayées. Les sources ou la méthodologie manquent pour conclure.';
     humorComment =
-      'C’est comme un penalty : techniquement défendable, mais on sent bien qu’il y a quand même faute.';
+      'Techniquement défendable, mais on sent bien qu’il y a quand même faute.';
     checkVerdict = 'discutable';
   } else if (verdict === 'BULLSHIT') {
     reasoning =

@@ -46,7 +46,7 @@ const REAL_ANALYSIS = {
   fact_checks: [{ claim: 'Le fait', verdict: 'vrai', note: 'Source connue.' }],
   political: false,
   mentions: [],
-  humor_comment: 'Même un arbitre VAR aurait validé.',
+  humor_comment: 'Même un notaire n’aurait rien à redire.',
 };
 
 function chatCompletion(analysis = REAL_ANALYSIS) {
