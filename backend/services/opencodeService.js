@@ -180,6 +180,7 @@ async function analyzeTweet(content, options = {}) {
   }
 
   const tweet = options.tweet || null;
+  const sources = Array.isArray(options.sources) ? options.sources : [];
   const images = tweet
     ? await loadTweetImages(tweet, { fetchImage: options.fetchImage })
     : [];
@@ -198,11 +199,17 @@ async function analyzeTweet(content, options = {}) {
             ? [
                 {
                   type: 'text',
-                  text: buildAnalysisPrompt(text, tweet, { withImages: true }),
+                  text: buildAnalysisPrompt(text, tweet, {
+                    withImages: true,
+                    sources,
+                  }),
                 },
                 ...toOpenAiImageParts(imageList),
               ]
-            : buildAnalysisPrompt(text, tweet, { withImages: false }),
+            : buildAnalysisPrompt(text, tweet, {
+                withImages: false,
+                sources,
+              }),
       },
     ],
   });
@@ -242,7 +249,9 @@ async function analyzeTweet(content, options = {}) {
       throw new Error('réponse vide : choices[0].message.content absent');
     }
 
-    const analysis = normalizeAnalysis(extractJson(raw));
+    const analysis = normalizeAnalysis(extractJson(raw), {
+      allowedUrls: sources.map((source) => source.url),
+    });
     lastError = null;
     logUsage(config, response.data && response.data.usage);
     return analysis;

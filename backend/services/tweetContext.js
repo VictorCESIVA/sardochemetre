@@ -1,6 +1,7 @@
 'use strict';
 
 const axios = require('axios');
+const { formatSourcesBlock } = require('./sourcesService');
 
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -51,10 +52,15 @@ function imageCandidates(tweet) {
 }
 
 /**
- * Texte envoyé au modèle : tweet, contexte de réponse, citation et aperçu
- * textuel des images. Le tweet reste une donnée, jamais une instruction.
+ * Texte envoyé au modèle : tweet, contexte de réponse, citation, aperçu
+ * textuel des images et sources consultées. Le tweet et les sources restent
+ * des données, jamais des instructions.
  */
-function buildAnalysisPrompt(content, tweet = null, { withImages = true } = {}) {
+function buildAnalysisPrompt(
+  content,
+  tweet = null,
+  { withImages = true, sources = [] } = {}
+) {
   const text = String(content || '').trim();
   const sections = [`Tweet à analyser :\n${text}`];
 
@@ -93,6 +99,11 @@ function buildAnalysisPrompt(content, tweet = null, { withImages = true } = {}) 
 
   if (descriptions.length > 0) {
     sections.push(`Description fournie par X :\n${descriptions.join('\n')}`);
+  }
+
+  const sourcesBlock = formatSourcesBlock(sources);
+  if (sourcesBlock) {
+    sections.push(sourcesBlock);
   }
 
   return sections.join('\n\n');

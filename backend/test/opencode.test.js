@@ -43,7 +43,12 @@ const ANALYSIS = {
   verdict: 'BULLSHIT',
   reasoning: 'Les chiffres avancés ne correspondent à aucune source connue.',
   fact_checks: [
-    { claim: 'Le chiffre avancé', verdict: 'faux', note: 'Aucune source.' },
+    {
+      claim: 'Le chiffre avancé',
+      verdict: 'faux',
+      note: 'Aucune source.',
+      sources: [],
+    },
   ],
   political: false,
   mentions: [],

@@ -94,7 +94,14 @@ test('normalizeAnalysis borne le score et normalise les champs', () => {
     bullshit_score: 100,
     verdict: 'CHAUD BOUILLANT',
     reasoning: 'explication',
-    fact_checks: [{ claim: 'affirmation', verdict: 'faux', note: 'note' }],
+    fact_checks: [
+      {
+        claim: 'affirmation',
+        verdict: 'faux',
+        note: 'note',
+        sources: [],
+      },
+    ],
     political: false,
     mentions: [],
     humor_comment: 'punchline',

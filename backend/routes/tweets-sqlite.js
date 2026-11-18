@@ -78,6 +78,25 @@ function createTweetsRouter() {
     }
   });
 
+  // GET /api/tweets/historique — courbe de l'indice par bucket
+  router.get('/historique', (req, res, next) => {
+    try {
+      const period = readPeriod(req, res);
+      if (!period) return;
+
+      const bucket = readString(req.query.bucket).trim() || 'week';
+      if (!['day', 'week', 'month'].includes(bucket)) {
+        return res.status(400).json({
+          error: 'Invalid bucket. Must be one of: day, week, month',
+        });
+      }
+
+      res.json(repo.getHistory({ period, bucket }));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // GET /api/tweets/stats — statistiques par période
   router.get('/stats', (req, res, next) => {
     try {

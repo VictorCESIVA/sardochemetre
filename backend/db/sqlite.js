@@ -96,6 +96,11 @@ function parseMentions(value) {
   return Array.isArray(parsed) ? parsed : [];
 }
 
+function parseSources(value) {
+  const parsed = parseJson(value, []);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
 function parseJson(value, fallback) {
   if (value === null || value === undefined || value === '') return fallback;
   if (typeof value === 'object') return value;
@@ -144,6 +149,7 @@ function mapTweet(row, author = null) {
     reasoning: row.reasoning || null,
     fact_checks: parseFactChecks(row.fact_checks),
     mentions: parseMentions(row.mentions),
+    sources: parseSources(row.sources),
     humor_comment: row.humor_comment || null,
     analyzed_at: row.analyzed_at || null,
   };
@@ -303,6 +309,7 @@ const TWEET_SELECT = `
     a.reasoning,
     a.fact_checks,
     a.mentions,
+    a.sources,
     a.humor_comment,
     a.analyzed_at
   FROM tweets t
@@ -328,6 +335,7 @@ const TWEET_LIST_COLUMNS = `
       a.reasoning,
       a.fact_checks,
       a.mentions,
+      a.sources,
       a.humor_comment,
       a.analyzed_at
 `;
@@ -639,6 +647,7 @@ function normalizeAnalysis(analysis) {
     reasoning: String(analysis.reasoning || '').trim() || 'Analyse indisponible.',
     factChecks: Array.isArray(analysis.fact_checks) ? analysis.fact_checks : [],
     mentions: normalizeMentionList(analysis.mentions),
+    sources: Array.isArray(analysis.sources) ? analysis.sources : [],
     humorComment:
       analysis.humor_comment === null || analysis.humor_comment === undefined
         ? ''
@@ -668,14 +677,15 @@ function upsertAnalysis(tweetId, analysis) {
 
     db.prepare(`
       INSERT INTO analyses
-        (tweet_id, bullshit_score, verdict, reasoning, fact_checks, mentions, humor_comment, analyzed_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (tweet_id, bullshit_score, verdict, reasoning, fact_checks, mentions, sources, humor_comment, analyzed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(tweet_id) DO UPDATE SET
         bullshit_score = excluded.bullshit_score,
         verdict = excluded.verdict,
         reasoning = excluded.reasoning,
         fact_checks = excluded.fact_checks,
         mentions = excluded.mentions,
+        sources = excluded.sources,
         humor_comment = excluded.humor_comment,
         analyzed_at = excluded.analyzed_at
     `).run(
@@ -685,6 +695,7 @@ function upsertAnalysis(tweetId, analysis) {
       normalized.reasoning,
       JSON.stringify(normalized.factChecks),
       JSON.stringify(mentions),
+      JSON.stringify(normalized.sources),
       normalized.humorComment,
       normalized.analyzedAt
     );
@@ -705,6 +716,97 @@ function upsertAnalysis(tweetId, analysis) {
   })();
 
   return getTweetById(tweetId);
+}
+
+const VALID_BUCKETS = ['day', 'week', 'month'];
+
+/**
+ * Clé de regroupement UTC : YYYY-MM-DD pour jour/semaine (semaine
+ * commençant le lundi), YYYY-MM pour le mois.
+ */
+function bucketKey(date, bucket) {
+  if (bucket === 'month') {
+    return date.toISOString().slice(0, 7);
+  }
+
+  if (bucket === 'week') {
+    const day = (date.getUTCDay() + 6) % 7;
+    const monday = new Date(date.getTime() - day * 24 * 60 * 60 * 1000);
+    return monday.toISOString().slice(0, 10);
+  }
+
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Historique de l'indice : score moyen par jour, semaine ou mois, avec la
+ * série des tweets politiques en plus. Les points vides côté politique
+ * renvoient avgPoliticalScore null.
+ */
+function getHistory({ period = 'all', bucket = 'week' } = {}) {
+  const db = getDb();
+  const safePeriod = normalizePeriod(period) || 'all';
+  const safeBucket = VALID_BUCKETS.includes(bucket) ? bucket : 'week';
+  const params = [];
+  const periodClause = buildPeriodClause(safePeriod, params);
+
+  const rows = db
+    .prepare(`
+      SELECT t.posted_at, t.political, a.bullshit_score
+      FROM tweets t
+      JOIN analyses a ON a.tweet_id = t.id
+      WHERE t.analyzed = 1 ${periodClause}
+      ORDER BY t.posted_at ASC
+    `)
+    .all(...params);
+
+  const byBucket = new Map();
+
+  for (const row of rows) {
+    const date = new Date(row.posted_at);
+    if (Number.isNaN(date.getTime())) continue;
+
+    const score = Number(row.bullshit_score);
+    if (!Number.isFinite(score)) continue;
+
+    const key = bucketKey(date, safeBucket);
+    const entry = byBucket.get(key) || {
+      date: key,
+      sumScore: 0,
+      count: 0,
+      politicalSum: 0,
+      politicalCount: 0,
+    };
+
+    entry.sumScore += score;
+    entry.count += 1;
+    if (row.political) {
+      entry.politicalSum += score;
+      entry.politicalCount += 1;
+    }
+
+    byBucket.set(key, entry);
+  }
+
+  const points = [...byBucket.values()]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((entry) => ({
+      date: entry.date,
+      avgScore: entry.count > 0 ? round2(entry.sumScore / entry.count) : 0,
+      count: entry.count,
+      politicalCount: entry.politicalCount,
+      avgPoliticalScore:
+        entry.politicalCount > 0
+          ? round2(entry.politicalSum / entry.politicalCount)
+          : null,
+    }));
+
+  return {
+    period: safePeriod,
+    bucket: safeBucket,
+    points: points.slice(-120),
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 /**
@@ -802,14 +904,15 @@ function seedDemoData({ now = new Date() } = {}) {
 
   const upsertAnalysisStmt = db.prepare(`
     INSERT INTO analyses
-      (tweet_id, bullshit_score, verdict, reasoning, fact_checks, mentions, humor_comment, analyzed_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      (tweet_id, bullshit_score, verdict, reasoning, fact_checks, mentions, sources, humor_comment, analyzed_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(tweet_id) DO UPDATE SET
       bullshit_score = excluded.bullshit_score,
       verdict = excluded.verdict,
       reasoning = excluded.reasoning,
       fact_checks = excluded.fact_checks,
       mentions = excluded.mentions,
+      sources = excluded.sources,
       humor_comment = excluded.humor_comment,
       analyzed_at = excluded.analyzed_at
   `);
@@ -848,6 +951,7 @@ function seedDemoData({ now = new Date() } = {}) {
         normalized.reasoning,
         JSON.stringify(normalized.factChecks),
         JSON.stringify(mentions),
+        JSON.stringify(normalized.sources),
         normalized.humorComment,
         normalized.analyzedAt
       );
@@ -874,6 +978,7 @@ module.exports = {
   getStats,
   getBullshitmetre,
   getElectionBoard,
+  getHistory,
   saveTweet,
   deleteTweetsBySource,
   replaceMockTweets,

@@ -144,6 +144,7 @@ test('GET /api/tweets : pagination, tri et forme plate', async () => {
       'reply_to',
       'retweets',
       'source',
+      'sources',
       'verdict',
       'views',
     ]);

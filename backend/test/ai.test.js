@@ -109,7 +109,9 @@ const REAL_ANALYSIS = {
   bullshit_score: 27,
   verdict: 'DOUTEUX',
   reasoning: 'Le tweet exagère une étude réelle.',
-  fact_checks: [{ claim: 'Une étude', verdict: 'discutable', note: 'Partielle.' }],
+  fact_checks: [
+    { claim: 'Une étude', verdict: 'discutable', note: 'Partielle.', sources: [] },
+  ],
   political: false,
   mentions: [],
   humor_comment: 'C’est à moitié vrai, comme la moitié des tweets.',
@@ -237,6 +239,7 @@ test('POST /api/ai/analyze : 200 avec un serveur OpenCode local', async () => {
     OPENCODE_API_KEY: 'oc_sk_test_api',
     OPENCODE_BASE_URL: baseUrl,
     OPENCODE_SESSION: 'ses_test_api',
+    ANALYZE_WITH_SOURCES: 'false',
   });
 
   try {
@@ -276,6 +279,7 @@ test('POST /api/ai/analyze : 502 quand le provider échoue', async () => {
   const saved = setEnv({
     OPENCODE_API_KEY: 'oc_sk_test_bad',
     OPENCODE_BASE_URL: baseUrl,
+    ANALYZE_WITH_SOURCES: 'false',
   });
 
   try {

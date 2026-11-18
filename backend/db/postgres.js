@@ -175,14 +175,15 @@ async function seedDemoData({ now = new Date() } = {}) {
       await client.query(
         `
           INSERT INTO analyses
-            (tweet_id, bullshit_score, verdict, reasoning, fact_checks, mentions, humor_comment)
-          VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7)
+            (tweet_id, bullshit_score, verdict, reasoning, fact_checks, mentions, sources, humor_comment)
+          VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8)
           ON CONFLICT (tweet_id) DO UPDATE SET
             bullshit_score = EXCLUDED.bullshit_score,
             verdict = EXCLUDED.verdict,
             reasoning = EXCLUDED.reasoning,
             fact_checks = EXCLUDED.fact_checks,
             mentions = EXCLUDED.mentions,
+            sources = EXCLUDED.sources,
             humor_comment = EXCLUDED.humor_comment,
             analyzed_at = NOW()
         `,
@@ -193,6 +194,7 @@ async function seedDemoData({ now = new Date() } = {}) {
           analysis.reasoning,
           JSON.stringify(Array.isArray(analysis.fact_checks) ? analysis.fact_checks : []),
           JSON.stringify(mentions),
+          JSON.stringify(Array.isArray(analysis.sources) ? analysis.sources : []),
           analysis.humor_comment || '',
         ]
       );

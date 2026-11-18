@@ -33,6 +33,7 @@ const TWEET_SELECT = `
     a.reasoning,
     a.fact_checks,
     a.mentions,
+    a.sources,
     a.humor_comment,
     a.analyzed_at
   FROM tweets t
@@ -58,6 +59,7 @@ const TWEET_LIST_COLUMNS = `
             a.reasoning,
             a.fact_checks,
             a.mentions,
+            a.sources,
             a.humor_comment,
             a.analyzed_at
 `;
@@ -117,6 +119,17 @@ function parseMentions(value) {
   }
 }
 
+function parseSources(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function mapTweet(row, author = null) {
   if (!row) return null;
 
@@ -144,6 +157,7 @@ function mapTweet(row, author = null) {
     reasoning: row.reasoning || null,
     fact_checks: parseFactChecks(row.fact_checks),
     mentions: parseMentions(row.mentions),
+    sources: parseSources(row.sources),
     humor_comment: row.humor_comment || null,
     analyzed_at:
       row.analyzed_at instanceof Date
@@ -346,6 +360,7 @@ function createTweetsRouter() {
             a.reasoning,
             a.fact_checks,
             a.mentions,
+            a.sources,
             a.humor_comment,
             a.analyzed_at
           FROM tweets t
@@ -499,6 +514,67 @@ function createTweetsRouter() {
     }
   });
 
+  // GET /api/tweets/historique — courbe de l'indice par bucket (avant /:id)
+  router.get('/historique', async (req, res, next) => {
+    try {
+      const period = readPeriod(req, res);
+      if (!period) return;
+
+      const bucket = readString(req.query.bucket).trim() || 'week';
+      if (!['day', 'week', 'month'].includes(bucket)) {
+        return res.status(400).json({
+          error: 'Invalid bucket. Must be one of: day, week, month',
+        });
+      }
+
+      const interval =
+        bucket === 'day'
+          ? 'day'
+          : bucket === 'month'
+            ? 'month'
+            : 'week';
+
+      const result = await getPool().query(
+        `
+          SELECT
+            to_char(date_trunc($1, t.posted_at), 'YYYY-MM-DD') AS bucket_date,
+            ROUND(AVG(a.bullshit_score)::numeric, 2) AS avg_score,
+            COUNT(*) AS count_all,
+            COUNT(CASE WHEN t.political THEN 1 END) AS count_political,
+            ROUND(
+              AVG(CASE WHEN t.political THEN a.bullshit_score END)::numeric, 2
+            ) AS avg_political
+          FROM tweets t
+          JOIN analyses a ON a.tweet_id = t.id
+          WHERE t.analyzed = true ${periodClause(period)}
+          GROUP BY 1
+          ORDER BY 1 ASC
+        `,
+        [interval]
+      );
+
+      const points = result.rows.slice(-120).map((row) => ({
+        date: row.bucket_date,
+        avgScore: Number.parseFloat(row.avg_score) || 0,
+        count: Number.parseInt(row.count_all, 10) || 0,
+        politicalCount: Number.parseInt(row.count_political, 10) || 0,
+        avgPoliticalScore:
+          row.avg_political === null
+            ? null
+            : Number.parseFloat(row.avg_political),
+      }));
+
+      res.json({
+        period,
+        bucket,
+        points,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // GET /api/tweets/search?q=... (avant /:id)
   router.get('/search', async (req, res, next) => {
     try {
@@ -571,14 +647,15 @@ function createTweetsRouter() {
           await pool.query(
             `
               INSERT INTO analyses
-                (tweet_id, bullshit_score, verdict, reasoning, fact_checks, mentions, humor_comment)
-              VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7)
+                (tweet_id, bullshit_score, verdict, reasoning, fact_checks, mentions, sources, humor_comment)
+              VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8)
               ON CONFLICT (tweet_id) DO UPDATE SET
                 bullshit_score = EXCLUDED.bullshit_score,
                 verdict = EXCLUDED.verdict,
                 reasoning = EXCLUDED.reasoning,
                 fact_checks = EXCLUDED.fact_checks,
                 mentions = EXCLUDED.mentions,
+                sources = EXCLUDED.sources,
                 humor_comment = EXCLUDED.humor_comment,
                 analyzed_at = NOW()
             `,
@@ -589,6 +666,7 @@ function createTweetsRouter() {
               analysis.reasoning,
               JSON.stringify(analysis.fact_checks || []),
               JSON.stringify(mentions),
+              JSON.stringify(analysis.sources || []),
               analysis.humor_comment || '',
             ]
           );

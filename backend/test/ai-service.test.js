@@ -43,7 +43,9 @@ const REAL_ANALYSIS = {
   bullshit_score: 15,
   verdict: 'VRAI',
   reasoning: 'Affirmation plausible et sourcée.',
-  fact_checks: [{ claim: 'Le fait', verdict: 'vrai', note: 'Source connue.' }],
+  fact_checks: [
+    { claim: 'Le fait', verdict: 'vrai', note: 'Source connue.', sources: [] },
+  ],
   political: false,
   mentions: [],
   humor_comment: 'Même un notaire n’aurait rien à redire.',
@@ -143,6 +145,7 @@ test('analyzeTweet : DEMO_MODE=true n’empêche pas l’appel OpenCode', async 
         DEMO_MODE: 'true',
         OPENCODE_API_KEY: 'oc_sk_test_demo',
         OPENCODE_BASE_URL: baseUrl,
+        ANALYZE_WITH_SOURCES: 'false',
       },
     });
 
@@ -192,6 +195,7 @@ test('analyzeWithRealProvider : succès OpenCode et erreur provider typée', asy
   const env = {
     OPENCODE_API_KEY: 'oc_sk_test_real',
     OPENCODE_BASE_URL: baseUrl,
+    ANALYZE_WITH_SOURCES: 'false',
   };
 
   try {

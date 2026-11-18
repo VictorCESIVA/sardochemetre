@@ -2,6 +2,7 @@
 
 const claudeService = require('./claudeService');
 const opencodeService = require('./opencodeService');
+const sourcesService = require('./sourcesService');
 
 const PROVIDERS = ['opencode', 'anthropic', 'mock'];
 
@@ -10,6 +11,73 @@ function createAiError(code, message, status) {
   error.code = code;
   error.status = status;
   return error;
+}
+
+/**
+ * ANALYZE_WITH_SOURCES=true (défaut) active la recherche de sources et la
+ * deuxième passe d'analyse. `false` repasse en analyse mono-passe.
+ */
+function sourcesEnabled(env = process.env) {
+  const raw = String((env && env.ANALYZE_WITH_SOURCES) || '')
+    .trim()
+    .toLowerCase();
+  return !(raw === 'false' || raw === '0' || raw === 'no' || raw === 'off');
+}
+
+/**
+ * Analyse en deux passes :
+ * 1. le modèle extrait les affirmations, mentions et verdict de base ;
+ * 2. le backend recherche des sources (Tavily si clé, Wikipédia sinon) pour
+ *    ces affirmations, puis le modèle ré-analyse en citant ces sources.
+ *
+ * Chaque étape est tolérante : pas de sources trouvées → première passe
+ * conservée ; deuxième passe échouée → première passe conservée. La
+ * recherche ne doit jamais faire échouer une analyse.
+ */
+async function analyzeWithSources(runPass, content, options = {}) {
+  const env = options.env || process.env;
+  const first = await runPass(content, options);
+  if (!first) return null;
+  if (!sourcesEnabled(env)) return first;
+
+  let gathered = [];
+  try {
+    const gather = options.gatherSources || sourcesService.gatherSources;
+    gathered = await gather(first, options.tweet || null, { env });
+  } catch (error) {
+    console.warn(`[Sources] Recherche ignorée : ${error.message}`);
+  }
+
+  if (!Array.isArray(gathered) || gathered.length === 0) {
+    return first;
+  }
+
+  const second = await runPass(content, { ...options, sources: gathered });
+  if (second) {
+    return {
+      ...second,
+      sources: sourcesService.normalizeSources(gathered),
+    };
+  }
+
+  // Les prompts sourcés sont plus longs : si la deuxième passe produit un
+  // JSON invalide, une tentative à température réduite suffit souvent.
+  const retry = await runPass(content, {
+    ...options,
+    sources: gathered,
+    temperature: 0.2,
+  });
+  if (retry) {
+    return {
+      ...retry,
+      sources: sourcesService.normalizeSources(gathered),
+    };
+  }
+
+  console.warn(
+    '[Sources] Deuxième passe impossible : analyse conservée sans sources.'
+  );
+  return first;
 }
 
 /**
@@ -96,17 +164,26 @@ function getStatus(env = process.env) {
 /**
  * Analyse pour les routes tweets : repli mock uniquement en test, en démo ou
  * avec AI_PROVIDER=mock explicite. DEMO_MODE ne court-circuite pas l'IA.
+ * Les providers réels passent par la double passe avec recherche de sources.
  */
 async function analyzeTweet(content, options = {}) {
   const env = options.env || process.env;
   const provider = resolveProvider(env);
 
   if (provider.provider === 'opencode' && provider.configured) {
-    return opencodeService.analyzeTweet(content, options);
+    return analyzeWithSources(
+      (text, passOptions) => opencodeService.analyzeTweet(text, passOptions),
+      content,
+      options
+    );
   }
 
   if (provider.provider === 'anthropic' && provider.configured) {
-    return claudeService.analyzeTweet(content, options);
+    return analyzeWithSources(
+      (text, passOptions) => claudeService.analyzeTweet(text, passOptions),
+      content,
+      options
+    );
   }
 
   if (!mockFallbackAllowed(env)) return null;
@@ -152,7 +229,11 @@ async function analyzeWithRealProvider(content, options = {}) {
   }
 
   if (provider.provider === 'opencode') {
-    const analysis = await opencodeService.analyzeTweet(content, options);
+    const analysis = await analyzeWithSources(
+      (text, passOptions) => opencodeService.analyzeTweet(text, passOptions),
+      content,
+      options
+    );
     if (!analysis) {
       const lastError = opencodeService.getLastError();
       throw createAiError(
@@ -166,7 +247,11 @@ async function analyzeWithRealProvider(content, options = {}) {
     return analysis;
   }
 
-  const analysis = await claudeService.analyzeTweet(content, options);
+  const analysis = await analyzeWithSources(
+    (text, passOptions) => claudeService.analyzeTweet(text, passOptions),
+    content,
+    options
+  );
   if (!analysis) {
     throw createAiError(
       'AI_PROVIDER_ERROR',
@@ -182,6 +267,8 @@ module.exports = {
   getStatus,
   analyzeTweet,
   analyzeWithRealProvider,
+  analyzeWithSources,
+  sourcesEnabled,
   getAnalysisFailure,
   createAiError,
   PROVIDERS,

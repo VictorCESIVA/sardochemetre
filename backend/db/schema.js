@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS analyses (
   reasoning TEXT NOT NULL,
   fact_checks TEXT NOT NULL DEFAULT '[]',
   mentions TEXT NOT NULL DEFAULT '[]',
+  sources TEXT NOT NULL DEFAULT '[]',
   humor_comment TEXT,
   analyzed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
@@ -123,11 +124,18 @@ function ensureTweetColumns(db) {
 }
 
 /**
- * Migration douce de la colonne analyses.mentions (contexte élection).
+ * Migration douce des colonnes d'analyse du dossier élection et des sources.
  */
 function ensureAnalysisColumns(db) {
-  if (!hasColumn(db, 'analyses', 'mentions')) {
-    db.exec("ALTER TABLE analyses ADD COLUMN mentions TEXT NOT NULL DEFAULT '[]'");
+  const migrations = [
+    ['mentions', "mentions TEXT NOT NULL DEFAULT '[]'"],
+    ['sources', "sources TEXT NOT NULL DEFAULT '[]'"],
+  ];
+
+  for (const [column, sql] of migrations) {
+    if (!hasColumn(db, 'analyses', column)) {
+      db.exec(`ALTER TABLE analyses ADD COLUMN ${sql}`);
+    }
   }
 }
 
