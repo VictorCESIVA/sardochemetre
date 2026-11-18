@@ -44,6 +44,8 @@ const REAL_ANALYSIS = {
   verdict: 'VRAI',
   reasoning: 'Affirmation plausible et sourcée.',
   fact_checks: [{ claim: 'Le fait', verdict: 'vrai', note: 'Source connue.' }],
+  political: false,
+  mentions: [],
   humor_comment: 'Même un arbitre VAR aurait validé.',
 };
 

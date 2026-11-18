@@ -26,20 +26,53 @@ function createTweetsRouter() {
     return period;
   }
 
+  function readTheme(req, res) {
+    const theme = readString(req.query.theme).trim();
+    if (!theme) return null;
+    if (theme !== 'politics') {
+      res.status(400).json({
+        error: 'Invalid theme. Must be one of: politics',
+      });
+      return undefined;
+    }
+    return theme;
+  }
+
   // GET /api/tweets — liste paginée des tweets analysés
   router.get('/', (req, res, next) => {
     try {
       const period = readPeriod(req, res);
       if (!period) return;
 
+      const theme = readTheme(req, res);
+      if (theme === undefined) return;
+
       const result = repo.listTweets({
         page: req.query.page,
         limit: req.query.limit,
         period,
         q: readString(req.query.q),
+        theme,
       });
 
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // GET /api/tweets/election — dossier présidentielle 2027
+  router.get('/election', (req, res, next) => {
+    try {
+      const period = readPeriod(req, res);
+      if (!period) return;
+
+      res.json(
+        repo.getElectionBoard({
+          period,
+          limit: req.query.limit,
+        })
+      );
     } catch (error) {
       next(error);
     }

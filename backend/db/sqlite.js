@@ -6,6 +6,11 @@ const Database = require('better-sqlite3');
 const { ensureSchema } = require('./schema');
 const { normalizePeriod, getPeriodCutoff } = require('./periods');
 const { loadDemoTweets } = require('./mock-data');
+const {
+  isPoliticalContent,
+  extractMentions,
+  normalizeMentions: normalizeMentionList,
+} = require('../services/politicsService');
 
 const DEFAULT_DB_PATH = path.join(__dirname, '..', 'sardochemetre.db');
 const VALID_VERDICTS = ['VRAI', 'DOUTEUX', 'BULLSHIT', 'CHAUD BOUILLANT'];
@@ -86,6 +91,11 @@ function parseFactChecks(value) {
   }
 }
 
+function parseMentions(value) {
+  const parsed = parseJson(value, []);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
 function parseJson(value, fallback) {
   if (value === null || value === undefined || value === '') return fallback;
   if (typeof value === 'object') return value;
@@ -125,6 +135,7 @@ function mapTweet(row, author = null) {
     quoted_tweet: parseQuotedTweet(row.quoted_tweet),
     reply_to: parseQuotedTweet(row.reply_to),
     analyzed: Boolean(row.analyzed),
+    political: Boolean(row.political),
     bullshit_score:
       row.bullshit_score === null || row.bullshit_score === undefined
         ? null
@@ -132,6 +143,7 @@ function mapTweet(row, author = null) {
     verdict: row.verdict || null,
     reasoning: row.reasoning || null,
     fact_checks: parseFactChecks(row.fact_checks),
+    mentions: parseMentions(row.mentions),
     humor_comment: row.humor_comment || null,
     analyzed_at: row.analyzed_at || null,
   };
@@ -285,25 +297,58 @@ const TWEET_SELECT = `
     t.reply_to,
     t.source,
     t.analyzed,
+    t.political,
     a.bullshit_score,
     a.verdict,
     a.reasoning,
     a.fact_checks,
+    a.mentions,
     a.humor_comment,
     a.analyzed_at
   FROM tweets t
   LEFT JOIN analyses a ON a.tweet_id = t.id
 `;
 
-function listTweets({ page = 1, limit = 20, period = 'all', q = '' } = {}) {
+const TWEET_LIST_COLUMNS = `
+      t.id,
+      t.content,
+      t.posted_at,
+      t.likes,
+      t.retweets,
+      t.replies,
+      t.views,
+      t.media,
+      t.quoted_tweet,
+      t.reply_to,
+      t.source,
+      t.analyzed,
+      t.political,
+      a.bullshit_score,
+      a.verdict,
+      a.reasoning,
+      a.fact_checks,
+      a.mentions,
+      a.humor_comment,
+      a.analyzed_at
+`;
+
+function listTweets({
+  page = 1,
+  limit = 20,
+  period = 'all',
+  q = '',
+  theme = null,
+} = {}) {
   const db = getDb();
   const safePeriod = normalizePeriod(period) || 'all';
   const safePage = Math.max(1, Number.parseInt(page, 10) || 1);
   const safeLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 20));
   const offset = (safePage - 1) * safeLimit;
   const query = String(q || '').trim();
+  const safeTheme = theme === 'politics' ? 'politics' : null;
 
   const conditions = ['t.analyzed = 1'];
+  if (safeTheme) conditions.push('t.political = 1');
   const params = [];
   const periodClause = buildPeriodClause(safePeriod, params);
   if (periodClause) conditions.push(periodClause.replace(/^AND /, ''));
@@ -318,24 +363,7 @@ function listTweets({ page = 1, limit = 20, period = 'all', q = '' } = {}) {
   const rows = db
     .prepare(`
       SELECT
-        t.id,
-        t.content,
-        t.posted_at,
-        t.likes,
-        t.retweets,
-        t.replies,
-        t.views,
-        t.media,
-        t.quoted_tweet,
-        t.reply_to,
-        t.source,
-        t.analyzed,
-        a.bullshit_score,
-        a.verdict,
-        a.reasoning,
-        a.fact_checks,
-        a.humor_comment,
-        a.analyzed_at
+        ${TWEET_LIST_COLUMNS}
       FROM tweets t
       JOIN analyses a ON a.tweet_id = t.id
       WHERE ${where}
@@ -368,6 +396,7 @@ function listTweets({ page = 1, limit = 20, period = 'all', q = '' } = {}) {
     },
     period: safePeriod,
     query,
+    theme: safeTheme,
   };
 }
 
@@ -391,24 +420,7 @@ function searchTweets(q) {
   const rows = getDb()
     .prepare(`
       SELECT
-        t.id,
-        t.content,
-        t.posted_at,
-        t.likes,
-        t.retweets,
-        t.replies,
-        t.views,
-        t.media,
-        t.quoted_tweet,
-        t.reply_to,
-        t.source,
-        t.analyzed,
-        a.bullshit_score,
-        a.verdict,
-        a.reasoning,
-        a.fact_checks,
-        a.humor_comment,
-        a.analyzed_at
+        ${TWEET_LIST_COLUMNS}
       FROM tweets t
       JOIN analyses a ON a.tweet_id = t.id
       WHERE t.analyzed = 1
@@ -518,12 +530,15 @@ function saveTweet(tweet) {
       : parseQuotedTweet(tweet.quoted_tweet);
   const replyTo =
     tweet.reply_to === undefined ? null : parseQuotedTweet(tweet.reply_to);
+  const political = tweet.political === undefined
+    ? isPoliticalContent(tweet.content)
+    : Boolean(tweet.political);
 
   getDb()
     .prepare(`
       INSERT INTO tweets
-        (id, content, posted_at, likes, retweets, replies, views, media, quoted_tweet, reply_to, source, analyzed)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        (id, content, posted_at, likes, retweets, replies, views, media, quoted_tweet, reply_to, source, political, analyzed)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
       ON CONFLICT(id) DO UPDATE SET
         content = excluded.content,
         posted_at = excluded.posted_at,
@@ -534,7 +549,8 @@ function saveTweet(tweet) {
         media = excluded.media,
         quoted_tweet = excluded.quoted_tweet,
         reply_to = excluded.reply_to,
-        source = excluded.source
+        source = excluded.source,
+        political = excluded.political
     `)
     .run(
       String(tweet.id),
@@ -547,7 +563,8 @@ function saveTweet(tweet) {
       JSON.stringify(media),
       quotedTweet ? JSON.stringify(quotedTweet) : null,
       replyTo ? JSON.stringify(replyTo) : null,
-      source
+      source,
+      political ? 1 : 0
     );
 
   if (tweet.author) {
@@ -621,6 +638,7 @@ function normalizeAnalysis(analysis) {
     verdict,
     reasoning: String(analysis.reasoning || '').trim() || 'Analyse indisponible.',
     factChecks: Array.isArray(analysis.fact_checks) ? analysis.fact_checks : [],
+    mentions: normalizeMentionList(analysis.mentions),
     humorComment:
       analysis.humor_comment === null || analysis.humor_comment === undefined
         ? ''
@@ -634,20 +652,30 @@ function upsertAnalysis(tweetId, analysis) {
   const db = getDb();
 
   db.transaction(() => {
-    const exists = db.prepare('SELECT 1 FROM tweets WHERE id = ?').get(String(tweetId));
-    if (!exists) {
+    const tweet = db
+      .prepare('SELECT id, content FROM tweets WHERE id = ?')
+      .get(String(tweetId));
+    if (!tweet) {
       throw new Error(`Tweet introuvable : ${tweetId}`);
     }
 
+    // Sans mentions de l'IA (provider mock ou réponse vide), le fallback
+    // déterministe relit le texte : présence oui, intention jamais.
+    const mentions =
+      normalized.mentions.length > 0
+        ? normalized.mentions
+        : extractMentions(tweet.content);
+
     db.prepare(`
       INSERT INTO analyses
-        (tweet_id, bullshit_score, verdict, reasoning, fact_checks, humor_comment, analyzed_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+        (tweet_id, bullshit_score, verdict, reasoning, fact_checks, mentions, humor_comment, analyzed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(tweet_id) DO UPDATE SET
         bullshit_score = excluded.bullshit_score,
         verdict = excluded.verdict,
         reasoning = excluded.reasoning,
         fact_checks = excluded.fact_checks,
+        mentions = excluded.mentions,
         humor_comment = excluded.humor_comment,
         analyzed_at = excluded.analyzed_at
     `).run(
@@ -656,14 +684,99 @@ function upsertAnalysis(tweetId, analysis) {
       normalized.verdict,
       normalized.reasoning,
       JSON.stringify(normalized.factChecks),
+      JSON.stringify(mentions),
       normalized.humorComment,
       normalized.analyzedAt
     );
 
-    db.prepare('UPDATE tweets SET analyzed = 1 WHERE id = ?').run(String(tweetId));
+    db.prepare(`
+      UPDATE tweets
+      SET analyzed = 1,
+          political = CASE
+            WHEN ? = 1 OR ? = 1 THEN 1
+            ELSE political
+          END
+      WHERE id = ?
+    `).run(
+      analysis.political ? 1 : 0,
+      isPoliticalContent(tweet.content) ? 1 : 0,
+      String(tweetId)
+    );
   })();
 
   return getTweetById(tweetId);
+}
+
+/**
+ * Tableau de bord du dossier élection : tweets politiques analysés,
+ * score moyen, mentions agrégées et derniers tweets concernés.
+ */
+function getElectionBoard({ period = 'all', limit = 10 } = {}) {
+  const db = getDb();
+  const safePeriod = normalizePeriod(period) || 'all';
+  const safeLimit = Math.min(50, Math.max(1, Number.parseInt(limit, 10) || 10));
+  const params = [];
+  const periodClause = buildPeriodClause(safePeriod, params);
+
+  const rows = db
+    .prepare(`
+      ${TWEET_SELECT}
+      WHERE t.analyzed = 1 AND t.political = 1 ${periodClause}
+      ORDER BY t.posted_at DESC, t.id DESC
+    `)
+    .all(...params);
+
+  const { total } = db
+    .prepare(`
+      SELECT COUNT(*) AS total
+      FROM tweets t
+      JOIN analyses a ON a.tweet_id = t.id
+      WHERE t.analyzed = 1 ${periodClause}
+    `)
+    .get(...params);
+
+  const scores = rows
+    .map((row) => Number(row.bullshit_score))
+    .filter((score) => Number.isFinite(score));
+  const avgPoliticalScore =
+    scores.length > 0
+      ? round2(scores.reduce((sum, score) => sum + score, 0) / scores.length)
+      : 0;
+
+  const byLabel = new Map();
+  for (const row of rows) {
+    for (const mention of parseMentions(row.mentions)) {
+      const entry = byLabel.get(mention.label) || {
+        label: mention.label,
+        type: mention.type || 'personnalité',
+        total: 0,
+        soutien: 0,
+        attaque: 0,
+        neutre: 0,
+        tweetIds: [],
+      };
+
+      entry.total += 1;
+      if (mention.stance === 'soutien') entry.soutien += 1;
+      else if (mention.stance === 'attaque') entry.attaque += 1;
+      else entry.neutre += 1;
+      if (entry.tweetIds.length < 20) entry.tweetIds.push(row.id);
+
+      byLabel.set(mention.label, entry);
+    }
+  }
+
+  const author = authorForTweets();
+
+  return {
+    period: safePeriod,
+    politicalCount: rows.length,
+    totalAnalyzed: Number(total) || 0,
+    avgPoliticalScore,
+    mentions: [...byLabel.values()].sort((a, b) => b.total - a.total),
+    tweets: rows.slice(0, safeLimit).map((row) => mapTweet(row, author)),
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 /**
@@ -675,26 +788,28 @@ function seedDemoData({ now = new Date() } = {}) {
   const db = getDb();
 
   const upsertTweet = db.prepare(`
-    INSERT INTO tweets (id, content, posted_at, likes, retweets, source, analyzed)
-    VALUES (?, ?, ?, ?, ?, 'mock', 1)
+    INSERT INTO tweets (id, content, posted_at, likes, retweets, source, political, analyzed)
+    VALUES (?, ?, ?, ?, ?, 'mock', ?, 1)
     ON CONFLICT(id) DO UPDATE SET
       content = excluded.content,
       posted_at = excluded.posted_at,
       likes = excluded.likes,
       retweets = excluded.retweets,
       source = 'mock',
+      political = excluded.political,
       analyzed = 1
   `);
 
   const upsertAnalysisStmt = db.prepare(`
     INSERT INTO analyses
-      (tweet_id, bullshit_score, verdict, reasoning, fact_checks, humor_comment, analyzed_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+      (tweet_id, bullshit_score, verdict, reasoning, fact_checks, mentions, humor_comment, analyzed_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(tweet_id) DO UPDATE SET
       bullshit_score = excluded.bullshit_score,
       verdict = excluded.verdict,
       reasoning = excluded.reasoning,
       fact_checks = excluded.fact_checks,
+      mentions = excluded.mentions,
       humor_comment = excluded.humor_comment,
       analyzed_at = excluded.analyzed_at
   `);
@@ -710,13 +825,21 @@ function seedDemoData({ now = new Date() } = {}) {
         analyzed_at: new Date(Date.parse(tweet.posted_at) + 60 * 60 * 1000).toISOString(),
       });
 
+      const content = String(tweet.content || '');
+
       upsertTweet.run(
         String(tweet.id),
-        String(tweet.content || ''),
+        content,
         toIso(tweet.posted_at),
         Number(tweet.likes) || 0,
-        Number(tweet.retweets) || 0
+        Number(tweet.retweets) || 0,
+        isPoliticalContent(content) ? 1 : 0
       );
+
+      const mentions =
+        normalized.mentions.length > 0
+          ? normalized.mentions
+          : extractMentions(content);
 
       upsertAnalysisStmt.run(
         String(tweet.id),
@@ -724,6 +847,7 @@ function seedDemoData({ now = new Date() } = {}) {
         normalized.verdict,
         normalized.reasoning,
         JSON.stringify(normalized.factChecks),
+        JSON.stringify(mentions),
         normalized.humorComment,
         normalized.analyzedAt
       );
@@ -749,6 +873,7 @@ module.exports = {
   searchTweets,
   getStats,
   getBullshitmetre,
+  getElectionBoard,
   saveTweet,
   deleteTweetsBySource,
   replaceMockTweets,

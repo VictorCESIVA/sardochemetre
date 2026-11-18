@@ -104,10 +104,12 @@ test('GET /api/tweets : pagination, tri et forme plate', async () => {
     'pagination',
     'period',
     'query',
+    'theme',
     'tweets',
   ]);
   assert.equal(body.period, 'all');
   assert.equal(body.query, '');
+  assert.equal(body.theme, null);
   assert.equal(body.tweets.length, 3);
   assert.deepEqual(body.pagination, {
     page: 1,
@@ -133,6 +135,8 @@ test('GET /api/tweets : pagination, tri et forme plate', async () => {
       'id',
       'likes',
       'media',
+      'mentions',
+      'political',
       'posted_at',
       'quoted_tweet',
       'reasoning',
@@ -405,6 +409,8 @@ test('POST /api/tweets/analyze : analyse mock déterministe et cohérente', asyn
     'bullshit_score',
     'fact_checks',
     'humor_comment',
+    'mentions',
+    'political',
     'reasoning',
     'verdict',
   ]);

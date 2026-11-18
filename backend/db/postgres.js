@@ -121,6 +121,10 @@ async function saveProfile(profile) {
  */
 async function seedDemoData({ now = new Date() } = {}) {
   const { loadDemoTweets } = require('./mock-data');
+  const {
+    isPoliticalContent,
+    extractMentions,
+  } = require('./services/politicsService');
   const tweets = loadDemoTweets(now);
   const client = await getPool().connect();
 
@@ -138,37 +142,47 @@ async function seedDemoData({ now = new Date() } = {}) {
         throw new Error(`Score invalide dans le mock pour le tweet ${tweet.id}`);
       }
 
+      const content = String(tweet.content || '');
+
       await client.query(
         `
-          INSERT INTO tweets (id, content, posted_at, likes, retweets, source, analyzed)
-          VALUES ($1, $2, $3, $4, $5, 'mock', true)
+          INSERT INTO tweets (id, content, posted_at, likes, retweets, source, political, analyzed)
+          VALUES ($1, $2, $3, $4, $5, 'mock', $6, true)
           ON CONFLICT (id) DO UPDATE SET
             content = EXCLUDED.content,
             posted_at = EXCLUDED.posted_at,
             likes = EXCLUDED.likes,
             retweets = EXCLUDED.retweets,
             source = 'mock',
+            political = EXCLUDED.political,
             analyzed = true
         `,
         [
           String(tweet.id),
-          tweet.content,
+          content,
           tweet.posted_at,
           Number(tweet.likes) || 0,
           Number(tweet.retweets) || 0,
+          isPoliticalContent(content),
         ]
       );
+
+      const mentions =
+        Array.isArray(analysis.mentions) && analysis.mentions.length > 0
+          ? analysis.mentions
+          : extractMentions(content);
 
       await client.query(
         `
           INSERT INTO analyses
-            (tweet_id, bullshit_score, verdict, reasoning, fact_checks, humor_comment)
-          VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+            (tweet_id, bullshit_score, verdict, reasoning, fact_checks, mentions, humor_comment)
+          VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7)
           ON CONFLICT (tweet_id) DO UPDATE SET
             bullshit_score = EXCLUDED.bullshit_score,
             verdict = EXCLUDED.verdict,
             reasoning = EXCLUDED.reasoning,
             fact_checks = EXCLUDED.fact_checks,
+            mentions = EXCLUDED.mentions,
             humor_comment = EXCLUDED.humor_comment,
             analyzed_at = NOW()
         `,
@@ -178,6 +192,7 @@ async function seedDemoData({ now = new Date() } = {}) {
           analysis.verdict,
           analysis.reasoning,
           JSON.stringify(Array.isArray(analysis.fact_checks) ? analysis.fact_checks : []),
+          JSON.stringify(mentions),
           analysis.humor_comment || '',
         ]
       );

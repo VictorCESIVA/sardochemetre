@@ -110,6 +110,8 @@ const REAL_ANALYSIS = {
   verdict: 'DOUTEUX',
   reasoning: 'Le tweet exagère une étude réelle.',
   fact_checks: [{ claim: 'Une étude', verdict: 'discutable', note: 'Partielle.' }],
+  political: false,
+  mentions: [],
   humor_comment: 'C’est à moitié vrai, comme la moitié des tweets.',
 };
 

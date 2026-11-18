@@ -95,6 +95,8 @@ test('normalizeAnalysis borne le score et normalise les champs', () => {
     verdict: 'CHAUD BOUILLANT',
     reasoning: 'explication',
     fact_checks: [{ claim: 'affirmation', verdict: 'faux', note: 'note' }],
+    political: false,
+    mentions: [],
     humor_comment: 'punchline',
   });
 

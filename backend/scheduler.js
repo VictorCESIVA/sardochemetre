@@ -116,6 +116,10 @@ async function processTweetsSqlite(tweets, profile = null, { analysisReady = tru
 
 async function processTweetsPostgres(tweets, profile = null, { analysisReady = true } = {}) {
   const { getPool, saveProfile } = require('./db/postgres');
+  const {
+    isPoliticalContent,
+    extractMentions,
+  } = require('./services/politicsService');
   const pool = getPool();
 
   if (profile) await saveProfile(profile);
@@ -125,8 +129,8 @@ async function processTweetsPostgres(tweets, profile = null, { analysisReady = t
       await pool.query(
         `
           INSERT INTO tweets
-            (id, content, posted_at, likes, retweets, source, replies, views, media, quoted_tweet, reply_to, analyzed)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, false)
+            (id, content, posted_at, likes, retweets, source, replies, views, media, quoted_tweet, reply_to, political, analyzed)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12, false)
           ON CONFLICT (id) DO UPDATE SET
             content = EXCLUDED.content,
             posted_at = EXCLUDED.posted_at,
@@ -137,7 +141,8 @@ async function processTweetsPostgres(tweets, profile = null, { analysisReady = t
             views = EXCLUDED.views,
             media = EXCLUDED.media,
             quoted_tweet = EXCLUDED.quoted_tweet,
-            reply_to = EXCLUDED.reply_to
+            reply_to = EXCLUDED.reply_to,
+            political = EXCLUDED.political
         `,
         [
           String(tweet.id),
@@ -151,6 +156,7 @@ async function processTweetsPostgres(tweets, profile = null, { analysisReady = t
           JSON.stringify(Array.isArray(tweet.media) ? tweet.media : []),
           tweet.quoted_tweet ? JSON.stringify(tweet.quoted_tweet) : null,
           tweet.reply_to ? JSON.stringify(tweet.reply_to) : null,
+          isPoliticalContent(tweet.content),
         ]
       );
 
@@ -171,16 +177,22 @@ async function processTweetsPostgres(tweets, profile = null, { analysisReady = t
         continue;
       }
 
+      const mentions =
+        Array.isArray(analysis.mentions) && analysis.mentions.length > 0
+          ? analysis.mentions
+          : extractMentions(tweet.content);
+
       await pool.query(
         `
           INSERT INTO analyses
-            (tweet_id, bullshit_score, verdict, reasoning, fact_checks, humor_comment)
-          VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+            (tweet_id, bullshit_score, verdict, reasoning, fact_checks, mentions, humor_comment)
+          VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7)
           ON CONFLICT (tweet_id) DO UPDATE SET
             bullshit_score = EXCLUDED.bullshit_score,
             verdict = EXCLUDED.verdict,
             reasoning = EXCLUDED.reasoning,
             fact_checks = EXCLUDED.fact_checks,
+            mentions = EXCLUDED.mentions,
             humor_comment = EXCLUDED.humor_comment,
             analyzed_at = NOW()
         `,
@@ -190,13 +202,27 @@ async function processTweetsPostgres(tweets, profile = null, { analysisReady = t
           analysis.verdict,
           analysis.reasoning,
           JSON.stringify(analysis.fact_checks || []),
+          JSON.stringify(mentions),
           analysis.humor_comment || '',
         ]
       );
 
-      await pool.query('UPDATE tweets SET analyzed = true WHERE id = $1', [
-        String(tweet.id),
-      ]);
+      await pool.query(
+        `
+          UPDATE tweets
+          SET analyzed = true,
+              political = CASE
+                WHEN $2 = true OR $3 = true THEN true
+                ELSE political
+              END
+          WHERE id = $1
+        `,
+        [
+          String(tweet.id),
+          analysis.political === true,
+          isPoliticalContent(tweet.content),
+        ]
+      );
 
       console.log(
         `[Scheduler] ${tweet.id} analysé : ${analysis.verdict} (${analysis.bullshit_score}/100)`

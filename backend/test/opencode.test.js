@@ -45,6 +45,8 @@ const ANALYSIS = {
   fact_checks: [
     { claim: 'Le chiffre avancé', verdict: 'faux', note: 'Aucune source.' },
   ],
+  political: false,
+  mentions: [],
   humor_comment: 'Le seul chiffre solide, c’est le numéro du tweet.',
 };
 

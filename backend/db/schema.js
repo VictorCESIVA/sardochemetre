@@ -1,5 +1,10 @@
 'use strict';
 
+const {
+  isPoliticalContent,
+  extractMentions,
+} = require('../services/politicsService');
+
 const TWEETS_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS tweets (
   id TEXT PRIMARY KEY,
@@ -13,6 +18,7 @@ CREATE TABLE IF NOT EXISTS tweets (
   quoted_tweet TEXT,
   reply_to TEXT,
   source TEXT NOT NULL DEFAULT 'mock',
+  political INTEGER NOT NULL DEFAULT 0 CHECK (political IN (0, 1)),
   analyzed INTEGER NOT NULL DEFAULT 0 CHECK (analyzed IN (0, 1)),
   fetched_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
@@ -38,6 +44,7 @@ CREATE TABLE IF NOT EXISTS analyses (
   verdict TEXT NOT NULL CHECK (verdict IN ('VRAI', 'DOUTEUX', 'BULLSHIT', 'CHAUD BOUILLANT')),
   reasoning TEXT NOT NULL,
   fact_checks TEXT NOT NULL DEFAULT '[]',
+  mentions TEXT NOT NULL DEFAULT '[]',
   humor_comment TEXT,
   analyzed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
@@ -67,6 +74,7 @@ CREATE INDEX IF NOT EXISTS idx_analyses_analyzed_at ON analyses(analyzed_at DESC
 CREATE INDEX IF NOT EXISTS idx_tweets_posted_at ON tweets(posted_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tweets_analyzed ON tweets(analyzed);
 CREATE INDEX IF NOT EXISTS idx_tweets_source ON tweets(source);
+CREATE INDEX IF NOT EXISTS idx_tweets_political ON tweets(political);
 `;
 
 function getTableSql(db, table) {
@@ -104,6 +112,7 @@ function ensureTweetColumns(db) {
     ['media', "media TEXT NOT NULL DEFAULT '[]'"],
     ['quoted_tweet', 'quoted_tweet TEXT'],
     ['reply_to', 'reply_to TEXT'],
+    ['political', 'political INTEGER NOT NULL DEFAULT 0'],
   ];
 
   for (const [column, sql] of migrations) {
@@ -111,6 +120,63 @@ function ensureTweetColumns(db) {
       db.exec(`ALTER TABLE tweets ADD COLUMN ${sql}`);
     }
   }
+}
+
+/**
+ * Migration douce de la colonne analyses.mentions (contexte élection).
+ */
+function ensureAnalysisColumns(db) {
+  if (!hasColumn(db, 'analyses', 'mentions')) {
+    db.exec("ALTER TABLE analyses ADD COLUMN mentions TEXT NOT NULL DEFAULT '[]'");
+  }
+}
+
+/**
+ * Remplit le contexte élection des tweets antérieurs à la fonctionnalité :
+ * marquage « politique » et mentions par mots-clés pour les analyses
+ * existantes. Idempotent : les tweets déjà marqués ne sont pas re-scannés,
+ * et une analyse avec mentions n'est jamais écrasée.
+ */
+function backfillElectionContext(db) {
+  const rows = db
+    .prepare(
+      `SELECT t.id, t.content, t.political,
+        (SELECT a.mentions FROM analyses a WHERE a.tweet_id = t.id) AS mentions
+      FROM tweets t
+      WHERE t.political = 0
+         OR (t.analyzed = 1 AND (mentions IS NULL OR mentions = '[]'))`
+    )
+    .all();
+
+  if (rows.length === 0) return;
+
+  const updatePolitical = db.prepare(
+    'UPDATE tweets SET political = 1 WHERE id = ?'
+  );
+  const updateMentions = db.prepare(
+    'UPDATE analyses SET mentions = ? WHERE tweet_id = ?'
+  );
+
+  db.transaction(() => {
+    for (const row of rows) {
+      if (!isPoliticalContent(row.content)) continue;
+
+      if (!row.political) {
+        updatePolitical.run(row.id);
+      }
+
+      if (
+        row.mentions === null ||
+        row.mentions === '[]' ||
+        row.mentions === ''
+      ) {
+        const mentions = extractMentions(row.content);
+        if (mentions.length > 0) {
+          updateMentions.run(JSON.stringify(mentions), row.id);
+        }
+      }
+    }
+  })();
 }
 
 function analysesNeedsRebuild(sql) {
@@ -194,6 +260,8 @@ function ensureSchema(db) {
   }
 
   dedupeAnalyses(db);
+  ensureAnalysisColumns(db);
+  backfillElectionContext(db);
   db.exec(INDEXES_SQL);
   db.exec(SCHEDULER_LEASES_TABLE_SQL);
   db.exec(RATE_LIMITS_TABLE_SQL);
@@ -217,5 +285,7 @@ module.exports = {
   ensureSchema,
   ensureTweetSourceColumn,
   ensureTweetColumns,
+  ensureAnalysisColumns,
+  backfillElectionContext,
   hasColumn,
 };

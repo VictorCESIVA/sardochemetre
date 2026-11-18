@@ -7,6 +7,11 @@ const {
   analyzeTweet,
   getAnalysisFailure,
 } = require('../services/aiService');
+const {
+  isPoliticalContent,
+  extractMentions,
+  normalizeMentions,
+} = require('../services/politicsService');
 
 const TWEET_SELECT = `
   SELECT
@@ -22,14 +27,39 @@ const TWEET_SELECT = `
     t.reply_to,
     t.source,
     t.analyzed,
+    t.political,
     a.bullshit_score,
     a.verdict,
     a.reasoning,
     a.fact_checks,
+    a.mentions,
     a.humor_comment,
     a.analyzed_at
   FROM tweets t
   LEFT JOIN analyses a ON a.tweet_id = t.id
+`;
+
+const TWEET_LIST_COLUMNS = `
+            t.id,
+            t.content,
+            t.posted_at,
+            t.likes,
+            t.retweets,
+            t.replies,
+            t.views,
+            t.media,
+            t.quoted_tweet,
+            t.reply_to,
+            t.source,
+            t.analyzed,
+            t.political,
+            a.bullshit_score,
+            a.verdict,
+            a.reasoning,
+            a.fact_checks,
+            a.mentions,
+            a.humor_comment,
+            a.analyzed_at
 `;
 
 function parseJson(value, fallback) {
@@ -76,6 +106,17 @@ function parseFactChecks(value) {
   }
 }
 
+function parseMentions(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function mapTweet(row, author = null) {
   if (!row) return null;
 
@@ -94,6 +135,7 @@ function mapTweet(row, author = null) {
     quoted_tweet: parseQuotedTweet(row.quoted_tweet),
     reply_to: parseQuotedTweet(row.reply_to),
     analyzed: Boolean(row.analyzed),
+    political: Boolean(row.political),
     bullshit_score:
       row.bullshit_score === null || row.bullshit_score === undefined
         ? null
@@ -101,6 +143,7 @@ function mapTweet(row, author = null) {
     verdict: row.verdict || null,
     reasoning: row.reasoning || null,
     fact_checks: parseFactChecks(row.fact_checks),
+    mentions: parseMentions(row.mentions),
     humor_comment: row.humor_comment || null,
     analyzed_at:
       row.analyzed_at instanceof Date
@@ -145,9 +188,13 @@ function periodClause(period) {
   }
 }
 
-function buildFilters(period, query) {
+function buildFilters(period, query, theme = null) {
   const conditions = ['t.analyzed = true'];
   const values = [];
+
+  if (theme === 'politics') {
+    conditions.push('t.political = true');
+  }
 
   if (query) {
     values.push(`%${escapeLike(query)}%`);
@@ -185,11 +232,26 @@ function createTweetsRouter() {
     return period;
   }
 
+  function readTheme(req, res) {
+    const theme = readString(req.query.theme).trim();
+    if (!theme) return null;
+    if (theme !== 'politics') {
+      res.status(400).json({
+        error: 'Invalid theme. Must be one of: politics',
+      });
+      return undefined;
+    }
+    return theme;
+  }
+
   // GET /api/tweets — liste paginée des tweets analysés
   router.get('/', async (req, res, next) => {
     try {
       const period = readPeriod(req, res);
       if (!period) return;
+
+      const theme = readTheme(req, res);
+      if (theme === undefined) return;
 
       const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
       const limit = Math.min(
@@ -199,7 +261,7 @@ function createTweetsRouter() {
       const offset = (page - 1) * limit;
       const query = readString(req.query.q).trim();
       const pool = getPool();
-      const { where, values } = buildFilters(period, query);
+      const { where, values } = buildFilters(period, query, theme);
 
       const limitIndex = values.length + 1;
       const offsetIndex = values.length + 2;
@@ -207,24 +269,7 @@ function createTweetsRouter() {
       const result = await pool.query(
         `
           SELECT
-            t.id,
-            t.content,
-            t.posted_at,
-            t.likes,
-            t.retweets,
-            t.replies,
-            t.views,
-            t.media,
-            t.quoted_tweet,
-            t.reply_to,
-            t.source,
-            t.analyzed,
-            a.bullshit_score,
-            a.verdict,
-            a.reasoning,
-            a.fact_checks,
-            a.humor_comment,
-            a.analyzed_at
+            ${TWEET_LIST_COLUMNS}
           FROM tweets t
           JOIN analyses a ON a.tweet_id = t.id
           WHERE ${where}
@@ -260,6 +305,107 @@ function createTweetsRouter() {
         },
         period,
         query,
+        theme: theme === 'politics' ? theme : null,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // GET /api/tweets/election — dossier présidentielle 2027 (avant /:id)
+  router.get('/election', async (req, res, next) => {
+    try {
+      const period = readPeriod(req, res);
+      if (!period) return;
+
+      const limit = Math.min(
+        50,
+        Math.max(1, Number.parseInt(req.query.limit, 10) || 10)
+      );
+      const pool = getPool();
+      const author = authorFromProfile(await getProfile());
+
+      const rows = await pool.query(
+        `
+          SELECT
+            t.id,
+            t.content,
+            t.posted_at,
+            t.likes,
+            t.retweets,
+            t.replies,
+            t.views,
+            t.media,
+            t.quoted_tweet,
+            t.reply_to,
+            t.source,
+            t.analyzed,
+            t.political,
+            a.bullshit_score,
+            a.verdict,
+            a.reasoning,
+            a.fact_checks,
+            a.mentions,
+            a.humor_comment,
+            a.analyzed_at
+          FROM tweets t
+          JOIN analyses a ON a.tweet_id = t.id
+          WHERE t.analyzed = true AND t.political = true ${periodClause(period)}
+          ORDER BY t.posted_at DESC, t.id DESC
+        `
+      );
+
+      const countResult = await pool.query(
+        `
+          SELECT COUNT(*) AS total
+          FROM tweets t
+          JOIN analyses a ON a.tweet_id = t.id
+          WHERE t.analyzed = true ${periodClause(period)}
+        `
+      );
+
+      const politicalRows = rows.rows;
+      const scores = politicalRows
+        .map((row) => Number(row.bullshit_score))
+        .filter((score) => Number.isFinite(score));
+      const avgPoliticalScore =
+        scores.length > 0
+          ? round2(scores.reduce((sum, score) => sum + score, 0) / scores.length)
+          : 0;
+
+      const byLabel = new Map();
+      for (const row of politicalRows) {
+        for (const mention of parseMentions(row.mentions)) {
+          const entry = byLabel.get(mention.label) || {
+            label: mention.label,
+            type: mention.type || 'personnalité',
+            total: 0,
+            soutien: 0,
+            attaque: 0,
+            neutre: 0,
+            tweetIds: [],
+          };
+
+          entry.total += 1;
+          if (mention.stance === 'soutien') entry.soutien += 1;
+          else if (mention.stance === 'attaque') entry.attaque += 1;
+          else entry.neutre += 1;
+          if (entry.tweetIds.length < 20) entry.tweetIds.push(row.id);
+
+          byLabel.set(mention.label, entry);
+        }
+      }
+
+      res.json({
+        period,
+        politicalCount: politicalRows.length,
+        totalAnalyzed: Number.parseInt(countResult.rows[0].total, 10) || 0,
+        avgPoliticalScore,
+        mentions: [...byLabel.values()].sort((a, b) => b.total - a.total),
+        tweets: politicalRows
+          .slice(0, limit)
+          .map((row) => mapTweet(row, author)),
+        updatedAt: new Date().toISOString(),
       });
     } catch (error) {
       next(error);
@@ -365,24 +511,7 @@ function createTweetsRouter() {
       const result = await getPool().query(
         `
           SELECT
-            t.id,
-            t.content,
-            t.posted_at,
-            t.likes,
-            t.retweets,
-            t.replies,
-            t.views,
-            t.media,
-            t.quoted_tweet,
-            t.reply_to,
-            t.source,
-            t.analyzed,
-            a.bullshit_score,
-            a.verdict,
-            a.reasoning,
-            a.fact_checks,
-            a.humor_comment,
-            a.analyzed_at
+            ${TWEET_LIST_COLUMNS}
           FROM tweets t
           JOIN analyses a ON a.tweet_id = t.id
           WHERE ${where}
@@ -434,16 +563,22 @@ function createTweetsRouter() {
 
       if (tweetId) {
         if (existing) {
+          const mentions =
+            normalizeMentions(analysis.mentions).length > 0
+              ? normalizeMentions(analysis.mentions)
+              : extractMentions(existing.content);
+
           await pool.query(
             `
               INSERT INTO analyses
-                (tweet_id, bullshit_score, verdict, reasoning, fact_checks, humor_comment)
-              VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+                (tweet_id, bullshit_score, verdict, reasoning, fact_checks, mentions, humor_comment)
+              VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7)
               ON CONFLICT (tweet_id) DO UPDATE SET
                 bullshit_score = EXCLUDED.bullshit_score,
                 verdict = EXCLUDED.verdict,
                 reasoning = EXCLUDED.reasoning,
                 fact_checks = EXCLUDED.fact_checks,
+                mentions = EXCLUDED.mentions,
                 humor_comment = EXCLUDED.humor_comment,
                 analyzed_at = NOW()
             `,
@@ -453,13 +588,27 @@ function createTweetsRouter() {
               analysis.verdict,
               analysis.reasoning,
               JSON.stringify(analysis.fact_checks || []),
+              JSON.stringify(mentions),
               analysis.humor_comment || '',
             ]
           );
 
-          await pool.query('UPDATE tweets SET analyzed = true WHERE id = $1', [
-            tweetId,
-          ]);
+          await pool.query(
+            `
+              UPDATE tweets
+              SET analyzed = true,
+                  political = CASE
+                    WHEN $2 = true OR $3 = true THEN true
+                    ELSE political
+                  END
+              WHERE id = $1
+            `,
+            [
+              tweetId,
+              analysis.political === true,
+              isPoliticalContent(existing.content),
+            ]
+          );
 
           const tweet = await fetchTweet(pool, tweetId);
           return res.json({ tweet });
