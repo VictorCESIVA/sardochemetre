@@ -171,6 +171,51 @@ function normalizeQuotedTweet(value) {
 }
 
 /**
+ * Converts mention objects to `{ label, type, stance }`.
+ * The stance (support/attack/neutral) is AI-produced or falls back to neutral.
+ */
+export function normalizeMentions(value) {
+  let mentions = value;
+
+  if (typeof mentions === 'string') {
+    try {
+      mentions = JSON.parse(mentions);
+    } catch {
+      return [];
+    }
+  }
+
+  if (!Array.isArray(mentions)) return [];
+
+  const seen = new Set();
+
+  return mentions
+    .map((mention) => {
+      if (!mention || typeof mention !== 'object') return null;
+
+      const label =
+        mention.label === null || mention.label === undefined
+          ? ''
+          : String(mention.label).trim().slice(0, 80);
+      if (!label || seen.has(label)) return null;
+
+      const type = ['candidat', 'parti', 'institution', 'personnalité'].includes(
+        mention.type,
+      )
+        ? mention.type
+        : 'personnalité';
+      const stance = ['soutien', 'attaque', 'neutre'].includes(mention.stance)
+        ? mention.stance
+        : 'neutre';
+
+      seen.add(label);
+      return { label, type, stance };
+    })
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+/**
  * Flattens a tweet from the backend into UI-ready fields.
  * The returned object is safe for the UI: analysis fields are top-level.
  */
@@ -199,6 +244,7 @@ export function normalizeTweet(tweet) {
     replies: Math.max(0, Math.floor(toNumber(tweet.replies, 0))),
     views: Math.max(0, Math.floor(toNumber(tweet.views, 0))),
     analyzed: tweet.analyzed ?? hasScore,
+    political: Boolean(tweet.political ?? analysis.political),
     bullshit_score: hasScore ? normalizeScore(scoreValue, 0) : null,
     verdict: verdictValue ? normalizeVerdict(verdictValue, 'DOUTEUX') : null,
     reasoning:
@@ -208,6 +254,7 @@ export function normalizeTweet(tweet) {
           ? String(analysis.reasoning)
           : '',
     fact_checks: normalizeFactChecks(tweet.fact_checks ?? analysis.fact_checks),
+    mentions: normalizeMentions(tweet.mentions ?? analysis.mentions),
     humor_comment:
       tweet.humor_comment != null
         ? String(tweet.humor_comment)
@@ -363,6 +410,76 @@ export function normalizeBullshitmetre(data, period = 'all') {
     timestamp:
       typeof source.timestamp === 'string'
         ? source.timestamp
+        : new Date().toISOString(),
+  };
+}
+
+/**
+ * Normalizes a backend election board response (GET /api/tweets/election):
+ * political tweet KPIs, aggregated mentions and the latest political tweets.
+ */
+export function normalizeElectionBoard(data, period = 'all') {
+  const source = data && typeof data === 'object' ? data : {};
+
+  const politicalCount = Math.max(
+    0,
+    Math.floor(toNumber(source.politicalCount ?? source.political_count, 0)),
+  );
+  const totalAnalyzed = Math.max(
+    0,
+    Math.floor(toNumber(source.totalAnalyzed ?? source.total_analyzed, 0)),
+  );
+
+  const mentions = (Array.isArray(source.mentions) ? source.mentions : [])
+    .map((mention) => {
+      if (!mention || typeof mention !== 'object') return null;
+
+      const label =
+        mention.label === null || mention.label === undefined
+          ? ''
+          : String(mention.label).trim();
+      if (!label) return null;
+
+      const stanceOf = (key) =>
+        Math.max(0, Math.floor(toNumber(mention[key], 0)));
+      const soutien = stanceOf('soutien');
+      const attaque = stanceOf('attaque');
+      const neutre = stanceOf('neutre');
+
+      return {
+        label,
+        type: ['candidat', 'parti', 'institution', 'personnalité'].includes(
+          mention.type,
+        )
+          ? mention.type
+          : 'personnalité',
+        total: Math.max(stanceOf('total'), soutien + attaque + neutre),
+        soutien,
+        attaque,
+        neutre,
+        tweetIds: Array.isArray(mention.tweetIds)
+          ? mention.tweetIds.map((id) => String(id))
+          : [],
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.total - a.total);
+
+  return {
+    period: source.period ?? period,
+    politicalCount,
+    totalAnalyzed,
+    avgPoliticalScore: normalizeScore(
+      source.avgPoliticalScore ?? source.avg_political_score,
+      0,
+    ),
+    mentions,
+    tweets: (Array.isArray(source.tweets) ? source.tweets : [])
+      .map(normalizeTweet)
+      .filter(Boolean),
+    updatedAt:
+      typeof source.updatedAt === 'string'
+        ? source.updatedAt
         : new Date().toISOString(),
   };
 }

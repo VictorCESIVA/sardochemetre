@@ -21,6 +21,11 @@ export default function Masthead({ aiStatus = null }) {
         <nav aria-label="Navigation principale" className="hidden md:block">
           <ul className="flex items-center gap-7">
             <li>
+              <Link to="/election" className="eyebrow text-ink-muted transition-colors hover:text-ink">
+                Élection 2027
+              </Link>
+            </li>
+            <li>
               <Link to="/#barometre" className="eyebrow text-ink-muted transition-colors hover:text-ink">
                 Le baromètre
               </Link>

@@ -24,6 +24,11 @@ export default function TweetRow({ tweet, index = 1, profile = null }) {
             Dossier {formatIndex(index)}
           </span>
           <VerdictBadge verdict={verdict} size="sm" />
+          {tweet?.political && (
+            <span className="rounded-full border border-vermillion/50 px-2.5 py-1 font-mono text-[9px] tracking-[0.1em] text-vermillion uppercase">
+              Politique
+            </span>
+          )}
         </div>
 
         {hasScore ? (

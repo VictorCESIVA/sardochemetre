@@ -9,6 +9,7 @@ import {
 } from '../lib/profile';
 import {
   normalizeBullshitmetre,
+  normalizeElectionBoard,
   normalizeStats,
   normalizeTweet,
 } from '../lib/tweetUtils';
@@ -129,10 +130,11 @@ function toRequestError(error, fallbackMessage) {
  * @param {string} query - Optional search text
  * @returns {Promise<Object>} { tweets, total, page, limit, totalPages, pagination }
  */
-export async function getTweets(page = 1, limit = 12, period = 'all', query = '') {
+export async function getTweets(page = 1, limit = 12, period = 'all', query = '', theme = '') {
   const safePage = Math.max(1, Math.floor(Number(page) || 1));
   const safeLimit = Math.min(100, Math.max(1, Math.floor(Number(limit) || 12)));
   const search = typeof query === 'string' ? query.trim() : '';
+  const safeTheme = theme === 'politics' ? 'politics' : '';
 
   try {
     const response = await axios.get(`${API_BASE_URL}/api/tweets`, {
@@ -141,12 +143,30 @@ export async function getTweets(page = 1, limit = 12, period = 'all', query = ''
         limit: safeLimit,
         period: period || 'all',
         ...(search ? { q: search } : {}),
+        ...(safeTheme ? { theme: safeTheme } : {}),
       },
     });
 
     return normalizeListResponse(response.data, safePage, safeLimit);
   } catch (error) {
     throw toRequestError(error, 'Impossible de charger les archives.');
+  }
+}
+
+/**
+ * Fetches the election 2027 board: political tweet KPIs, aggregated
+ * mentions (support/attack) and the latest political tweets.
+ * @param {string} period - 'day' | 'week' | 'month' | 'all'
+ * @returns {Promise<Object>} Election board
+ */
+export async function getElectionBoard(period = 'all') {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/api/tweets/election`, {
+      params: { period: period || 'all' },
+    });
+    return normalizeElectionBoard(response.data, period);
+  } catch (error) {
+    throw toRequestError(error, 'Impossible de charger le dossier élection.');
   }
 }
 

@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import Home from './pages/Home';
 import TweetDetail from './pages/TweetDetail';
+import Election from './pages/Election';
 import NotFound from './components/NotFound';
 import ScrollToTop from './components/ScrollToTop';
 
@@ -16,6 +17,7 @@ function App() {
       <ScrollToTop />
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/election" element={<Election />} />
         <Route path="/tweet/:id" element={<TweetDetail />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

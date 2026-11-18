@@ -3,7 +3,9 @@ import {
   filterByPeriod,
   matchesQuery,
   normalizeBullshitmetre,
+  normalizeElectionBoard,
   normalizeFactChecks,
+  normalizeMentions,
   normalizeScore,
   normalizeStats,
   normalizeTweet,
@@ -382,5 +384,173 @@ describe('pagination', () => {
     expect(result.limit).toBe(1);
     expect(result.tweets).toHaveLength(1);
     expect(result.totalPages).toBe(8);
+  });
+});
+
+describe('normalizeMentions', () => {
+  it('keeps valid mentions and repairs invalid type or stance', () => {
+    const mentions = normalizeMentions([
+      { label: 'David Lisnard', type: 'candidat', stance: 'soutien' },
+      { label: 'LFI', type: 'blob', stance: 'colère' },
+      { label: '', type: 'parti', stance: 'attaque' },
+      null,
+    ]);
+
+    expect(mentions).toEqual([
+      { label: 'David Lisnard', type: 'candidat', stance: 'soutien' },
+      { label: 'LFI', type: 'personnalité', stance: 'neutre' },
+    ]);
+  });
+
+  it('parses mentions stored as a JSON string, caps the list and dedupes', () => {
+    const many = Array.from({ length: 12 }, (_, index) => ({
+      label: `Entité ${index}`,
+      type: 'parti',
+      stance: 'neutre',
+    }));
+
+    const fromJson = normalizeMentions(
+      JSON.stringify([{ label: 'RN', type: 'parti', stance: 'attaque' }]),
+    );
+    expect(fromJson).toEqual([{ label: 'RN', type: 'parti', stance: 'attaque' }]);
+
+    const capped = normalizeMentions(many);
+    expect(capped).toHaveLength(8);
+
+    const dupes = normalizeMentions([
+      { label: 'Marine Le Pen', type: 'candidat', stance: 'neutre' },
+      { label: 'Marine Le Pen', type: 'candidat', stance: 'soutien' },
+    ]);
+    expect(dupes).toEqual([
+      { label: 'Marine Le Pen', type: 'candidat', stance: 'neutre' },
+    ]);
+  });
+});
+
+describe('normalizeTweet political context', () => {
+  it('exposes the political flag and mentions from the backend', () => {
+    const tweet = normalizeTweet({
+      id: '7',
+      content: 'Lisnard va gagner le débat présidentiel.',
+      political: true,
+      mentions: [
+        { label: 'David Lisnard', type: 'candidat', stance: 'soutien' },
+      ],
+    });
+
+    expect(tweet.political).toBe(true);
+    expect(tweet.mentions).toEqual([
+      { label: 'David Lisnard', type: 'candidat', stance: 'soutien' },
+    ]);
+  });
+
+  it('defaults to non political with no mentions', () => {
+    const tweet = normalizeTweet({
+      id: '8',
+      content: 'J’ai mangé des pâtes au pesto.',
+    });
+
+    expect(tweet.political).toBe(false);
+    expect(tweet.mentions).toEqual([]);
+  });
+});
+
+describe('normalizeElectionBoard', () => {
+  const BOARD = {
+    period: 'all',
+    politicalCount: 4,
+    totalAnalyzed: 10,
+    avgPoliticalScore: '47.5',
+    mentions: [
+      {
+        label: 'David Lisnard',
+        type: 'candidat',
+        total: 3,
+        soutien: 2,
+        attaque: 1,
+        neutre: 0,
+        tweetIds: ['a', 'b', 'c'],
+      },
+      {
+        label: 'La France insoumise',
+        type: 'parti',
+        total: 5,
+        soutien: 0,
+        attaque: 4,
+        neutre: 1,
+        tweetIds: ['a', 'b'],
+      },
+    ],
+    tweets: [
+      {
+        id: 'a',
+        content: 'Mélenchon attaque Lisnard.',
+        political: true,
+        bullshit_score: 40,
+        verdict: 'DOUTEUX',
+      },
+    ],
+    updatedAt: '2026-11-18T10:00:00.000Z',
+  };
+
+  it('normalizes KPIs, mentions and tweets', () => {
+    const board = normalizeElectionBoard(BOARD);
+
+    expect(board.period).toBe('all');
+    expect(board.politicalCount).toBe(4);
+    expect(board.totalAnalyzed).toBe(10);
+    expect(board.avgPoliticalScore).toBe(47.5);
+    expect(board.updatedAt).toBe('2026-11-18T10:00:00.000Z');
+
+    expect(board.mentions[0].label).toBe('La France insoumise');
+    expect(board.mentions[0].total).toBe(5);
+    expect(board.mentions).toHaveLength(2);
+
+    expect(board.tweets).toHaveLength(1);
+    expect(board.tweets[0]).toMatchObject({
+      id: 'a',
+      political: true,
+      verdict: 'DOUTEUX',
+    });
+  });
+
+  it('sorts mentions by total and repairs missing stance counts', () => {
+    const board = normalizeElectionBoard({
+      mentions: [
+        { label: 'RN', type: 'parti', total: 2, soutien: 1, tweetIds: [] },
+        {
+          label: 'Zemmour',
+          type: 'candidat',
+          total: 6,
+          soutien: 0,
+          attaque: 0,
+          neutre: 6,
+          tweetIds: [],
+        },
+      ],
+    });
+
+    expect(board.mentions[0].label).toBe('Zemmour');
+    expect(board.mentions[1]).toMatchObject({
+      label: 'RN',
+      soutien: 1,
+      attaque: 0,
+      neutre: 0,
+      total: 2,
+    });
+  });
+
+  it('tolerates an empty or malformed payload', () => {
+    const board = normalizeElectionBoard(null, 'week');
+
+    expect(board).toMatchObject({
+      period: 'week',
+      politicalCount: 0,
+      totalAnalyzed: 0,
+      avgPoliticalScore: 0,
+      mentions: [],
+      tweets: [],
+    });
+    expect(!Number.isNaN(Date.parse(board.updatedAt))).toBe(true);
   });
 });
