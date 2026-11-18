@@ -1,14 +1,14 @@
 const PERIODS = [
-  { id: 'day', label: 'Aujourd’hui' },
-  { id: 'week', label: 'Cette semaine' },
-  { id: 'month', label: 'Ce mois' },
-  { id: 'all', label: 'Tout l’historique' },
+  { id: 'day', label: '24 h' },
+  { id: 'week', label: '7 jours' },
+  { id: 'month', label: '30 jours' },
+  { id: 'all', label: 'Tout' },
 ];
 
 export default function PeriodTabs({ value = 'all', onChange }) {
   return (
     <nav aria-label="Filtrer par période">
-      <ul className="flex flex-wrap gap-x-4 gap-y-1 sm:gap-x-5 md:gap-x-6">
+      <ul className="inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-rule bg-paper-alt p-1">
         {PERIODS.map((period) => {
           const active = value === period.id;
 
@@ -18,10 +18,10 @@ export default function PeriodTabs({ value = 'all', onChange }) {
                 type="button"
                 onClick={() => onChange(period.id)}
                 aria-current={active ? 'page' : undefined}
-                className={`-mb-px border-b-2 pb-2 font-mono text-[10px] tracking-[0.12em] whitespace-nowrap uppercase transition-colors ${
+                className={`rounded-full px-4 py-2 font-mono text-[10px] font-medium tracking-[0.08em] whitespace-nowrap uppercase transition-colors sm:px-5 ${
                   active
-                    ? 'border-vermillion text-ink'
-                    : 'border-transparent text-ink-muted hover:text-ink'
+                    ? 'bg-vermillion text-paper'
+                    : 'text-ink-muted hover:bg-rule/60 hover:text-ink'
                 }`}
               >
                 {period.label}

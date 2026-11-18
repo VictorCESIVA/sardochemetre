@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import * as tweetService from '../services/tweetService';
 import {
   filterByPeriod,
@@ -22,7 +21,6 @@ import {
   SearchField,
   SectionLabel,
   StatStrip,
-  TweetEmbed,
   TweetRow,
   VerdictBreakdown,
 } from '../components';
@@ -108,79 +106,56 @@ function scrollToArchives() {
   });
 }
 
-function MethodAside({ score, sample, periodLabel, latestTweet, profile }) {
+function MethodAside({ score, sample, periodLabel }) {
+  const steps = [
+    ['01', 'On lit', 'Le tweet est récupéré tel quel, avec son contexte et ses médias.'],
+    ['02', 'On recoupe', 'L’IA isole les affirmations et les confronte aux faits disponibles.'],
+    ['03', 'On note', 'De 0 à 100, avec un verdict, une explication et une pointe d’humour.'],
+  ];
+
   return (
-    <aside
-      id="methode"
-      className="scroll-mt-8 border-t border-ink pt-6 lg:border-t-0 lg:border-l lg:border-rule lg:pt-1 lg:pl-8"
-    >
-      <SectionLabel as="h2">La méthode</SectionLabel>
+    <section id="methode" aria-labelledby="method-title" className="surface-card mt-16 scroll-mt-8 p-5 md:p-8 lg:p-10">
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.6fr)] lg:gap-12">
+        <div>
+          <p className="eyebrow text-vermillion">La méthode</p>
+          <h2 id="method-title" className="mt-4 font-title text-3xl leading-[1.02] tracking-[-0.055em] text-ink uppercase md:text-4xl">
+            Une IA.<br />Trois étapes.<br />Zéro langue de bois.
+          </h2>
+          <p className="mt-5 max-w-sm text-sm leading-relaxed text-ink-muted">
+            Un outil satirique pour lire les tweets autrement. Les analyses peuvent se tromper : l’esprit critique reste obligatoire.
+          </p>
+        </div>
 
-      <p className="mt-4 text-sm leading-relaxed text-ink-muted">
-        Chaque tweet est lu, recoupé, puis noté de 0 à 100. Les affirmations
-        vérifiables sont isolées, confrontées aux faits connus, et le verdict
-        tombe. Le doute reste autorisé.
-      </p>
-
-      <dl className="mt-6 border-t border-rule pt-4">
-        <div className="flex items-baseline justify-between gap-3 border-b border-rule pb-2.5">
-          <dt className="eyebrow text-ink-muted">Score global</dt>
-          <dd className="font-mono text-xs tabular-nums text-ink">
-            {Math.round(score)}/100
-          </dd>
+        <div>
+          <ol className="grid gap-4 sm:grid-cols-3">
+            {steps.map(([number, title, text]) => (
+              <li key={number} className="rounded-2xl border border-rule p-4">
+                <span className="font-mono text-xs text-vermillion">{number}</span>
+                <h3 className="mt-5 font-sans text-base font-semibold text-ink">{title}</h3>
+                <p className="mt-2 text-xs leading-relaxed text-ink-muted">{text}</p>
+              </li>
+            ))}
+          </ol>
+          <dl className="mt-5 flex flex-wrap gap-x-8 gap-y-3 border-t border-rule pt-5">
+            <div className="flex items-baseline gap-2"><dt className="eyebrow text-ink-muted">Score affiché</dt><dd className="font-mono text-xs text-ink">{Math.round(score)}/100</dd></div>
+            <div className="flex items-baseline gap-2"><dt className="eyebrow text-ink-muted">Échantillon</dt><dd className="font-mono text-xs text-ink">{formatNumber(sample)}</dd></div>
+            <div className="flex items-baseline gap-2"><dt className="eyebrow text-ink-muted">Période</dt><dd className="font-mono text-xs text-ink">{periodLabel}</dd></div>
+          </dl>
         </div>
-        <div className="flex items-baseline justify-between gap-3 border-b border-rule py-2.5">
-          <dt className="eyebrow text-ink-muted">Échantillon</dt>
-          <dd className="font-mono text-xs tabular-nums text-ink">
-            {formatNumber(sample)}
-          </dd>
-        </div>
-        <div className="flex items-baseline justify-between gap-3 py-2.5">
-          <dt className="eyebrow text-ink-muted">Période</dt>
-          <dd className="font-mono text-[10px] text-ink">{periodLabel}</dd>
-        </div>
-      </dl>
-
-      {latestTweet && (
-        <div className="mt-6 border-t border-rule pt-4">
-          <p className="eyebrow text-ink-muted">Dernière entrée</p>
-          <div className="mt-3">
-            <TweetEmbed
-              tweet={latestTweet}
-              profile={profile}
-              variant="compact"
-              showMedia={false}
-              showQuoted={false}
-            />
-          </div>
-          <Link
-            to={`/tweet/${encodeURIComponent(String(latestTweet.id))}`}
-            className="link-editorial group mt-3 text-ink"
-          >
-            Lire l’analyse
-            <IconArrowRight className="h-3 w-3 transition-transform duration-150 group-hover:translate-x-1" />
-          </Link>
-        </div>
-      )}
-    </aside>
+      </div>
+    </section>
   );
 }
 
 function EmptyArchive({ title, message, children }) {
   return (
-    <div className="border-y border-ink py-10 md:py-14">
-      <p className="eyebrow text-vermillion">Archives</p>
-      <h2 className="mt-3 max-w-2xl font-title text-3xl leading-[1.05] tracking-[-0.035em] text-ink md:text-4xl">
+    <div className="surface-card px-5 py-12 text-center md:px-8 md:py-16">
+      <p className="eyebrow text-vermillion">Archives · 0 résultat</p>
+      <h2 className="mx-auto mt-4 max-w-2xl font-title text-3xl leading-[1.03] tracking-[-0.05em] text-balance text-ink uppercase md:text-4xl">
         {title}
       </h2>
-      <p className="mt-4 max-w-lg text-sm leading-relaxed text-ink-muted">
-        {message}
-      </p>
-      {children && (
-        <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-3">
-          {children}
-        </div>
-      )}
+      <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-ink-muted">{message}</p>
+      {children && <div className="mt-7 flex flex-wrap items-center justify-center gap-3">{children}</div>}
     </div>
   );
 }
@@ -384,7 +359,6 @@ function Home() {
     return best;
   }, [tweets]);
 
-  const latestTweet = tweets[0] || null;
   const score = normalizedBullshitmetre?.globalScore ?? 0;
   const sampleSize =
     normalizedBullshitmetre?.sampleSize ??
@@ -420,25 +394,22 @@ function Home() {
   };
 
   const renderResults = () => (
-    <section id="archives" className="mt-12 scroll-mt-8">
-      <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-ink pb-2">
-        <h2 className="font-title text-2xl leading-tight tracking-[-0.03em] text-ink md:text-3xl">
-          {isSearching ? 'Résultats de recherche' : 'Les dernières analyses'}
-        </h2>
-        <p
-          role="status"
-          aria-live="polite"
-          className="eyebrow text-ink-muted"
-        >
+    <section id="archives" aria-labelledby="archives-title" className="mt-16 scroll-mt-8">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="eyebrow text-vermillion">Les archives</p>
+          <h2 id="archives-title" className="mt-2 font-title text-3xl leading-none tracking-[-0.055em] text-ink uppercase md:text-4xl">
+            {isSearching ? 'Résultats.' : 'Tous les dossiers.'}
+          </h2>
+        </div>
+        <p role="status" aria-live="polite" className="max-w-full font-mono text-[10px] leading-relaxed text-ink-muted">
           {isSearching
             ? `${formatNumber(totalResults)} résultat${totalResults > 1 ? 's' : ''} pour « ${debouncedQuery} »`
             : `${formatNumber(totalResults)} tweet${totalResults > 1 ? 's' : ''} · ${periodLabel}`}
         </p>
       </div>
 
-      <div
-        className={`mt-1 transition-opacity ${refreshing ? 'opacity-60' : 'opacity-100'}`}
-      >
+      <div className={`mt-7 grid items-stretch gap-4 lg:grid-cols-2 ${refreshing ? 'opacity-60' : 'opacity-100'} transition-opacity`}>
         {tweets.map((tweet, index) => (
           <TweetRow
             key={tweet.id ?? `tweet-${index}`}
@@ -457,16 +428,6 @@ function Home() {
         onPageChange={goToPage}
       />
     </section>
-  );
-
-  const methodAside = (
-    <MethodAside
-      score={score}
-      sample={sampleSize}
-      periodLabel={periodLabel}
-      latestTweet={latestTweet}
-      profile={profile}
-    />
   );
 
   return (
@@ -490,74 +451,51 @@ function Home() {
             />
           ) : (
             <>
-              <section aria-labelledby="hero-title">
-                <SectionLabel>Données réelles · @Sardoche</SectionLabel>
-                <h1
-                  id="hero-title"
-                  className="mt-3 max-w-4xl font-title text-[clamp(3rem,8vw,6.5rem)] leading-[0.9] tracking-[-0.055em] text-balance text-ink"
-                >
-                  Le bullshit,{' '}
-                  <span className="font-normal italic">mesuré</span>
-                  <span className="text-vermillion">.</span>
-                </h1>
-                <p className="mt-4 max-w-2xl text-sm leading-relaxed text-ink-muted md:text-base">
-                  Sardoche tweete. Une IA vérifie. La nuance, elle, prend des
-                  vacances.
-                </p>
-              </section>
-
-              <div className="mt-8 flex flex-col gap-5 border-y border-rule py-3.5 md:mt-10 lg:flex-row lg:items-end lg:justify-between lg:gap-10">
-                <PeriodTabs value={period} onChange={handlePeriodChange} />
-                <div className="w-full lg:max-w-sm lg:shrink-0">
-                  <SearchField
-                    value={query}
-                    onChange={setQuery}
-                    onClear={handleClearSearch}
-                    onSubmit={handleSearchSubmit}
-                    busy={refreshing && isSearching}
-                  />
-                </div>
-              </div>
-
-              <section
-                aria-labelledby="score-title"
-                className="mt-10 grid gap-10 md:mt-12 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] lg:gap-12"
-              >
+              <section aria-labelledby="hero-title" className="grid items-center gap-10 py-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)] lg:gap-14 lg:py-8">
                 <div>
-                  <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-rule pb-2">
-                    <h2 id="score-title" className="eyebrow text-ink-muted">
-                      Indice de bullshit
-                    </h2>
-                    <span className="eyebrow text-ink-muted">
-                      {periodLabel}
+                  <SectionLabel>Observatoire satirique · @Sardoche</SectionLabel>
+                  <h1 id="hero-title" className="display-title mt-6 text-[clamp(3.4rem,7.6vw,7rem)] text-ink">
+                    Il tweete.<br /><span className="text-vermillion">On vérifie.</span>
+                  </h1>
+                  <p className="mt-7 max-w-xl text-base leading-relaxed text-ink-muted md:text-lg">
+                    Le bullshit-o-mètre non officiel qui passe les tweets de Sardoche au crible. Des faits, des scores et un peu de mauvaise foi.
+                  </p>
+                  <div className="mt-8 flex flex-wrap items-center gap-5">
+                    <a href="#archives" className="btn-primary">
+                      Voir les analyses<IconArrowRight className="h-4 w-4" />
+                    </a>
+                    <a href="#methode" className="link-editorial text-ink-muted">Comment ça marche<span aria-hidden="true">↘</span></a>
+                  </div>
+                </div>
+
+                <section id="barometre" aria-labelledby="score-title" className="surface-card scroll-mt-8 border-vermillion/30 p-6 md:p-8">
+                  <div className="flex items-center justify-between gap-4">
+                    <h2 id="score-title" className="eyebrow text-ink">Le baromètre</h2>
+                    <span className="flex items-center gap-2 rounded-full border border-rule px-3 py-1.5 font-mono text-[9px] tracking-[0.08em] text-ink-muted uppercase">
+                      <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-verdict-true" />Données réelles
                     </span>
                   </div>
-
-                  <div className="mt-4 flex items-end gap-3">
-                    <p className="font-title text-[clamp(6rem,17vw,12rem)] leading-[0.68] tracking-[-0.075em] tabular-nums text-ink">
-                      {Math.round(score)}
-                    </p>
-                    <p className="mb-4 font-mono text-xs text-ink-muted">/100</p>
+                  <div className="mt-8 flex items-end justify-between gap-4">
+                    <p className="font-title text-[clamp(6rem,12vw,9rem)] leading-[0.72] tracking-[-0.09em] tabular-nums text-ink">{Math.round(score)}</p>
+                    <div className="mb-1 text-right">
+                      <p className="font-mono text-xs text-ink-muted">/100</p>
+                      <p className="eyebrow mt-2 text-vermillion">Indice global</p>
+                    </div>
                   </div>
-
-                  <ScoreGauge
-                    score={score}
-                    label={`Indice de bullshit, ${periodLabel}`}
-                    className="mt-7"
-                  />
-
-                  <p className="mt-4 font-mono text-[10px] leading-relaxed tracking-[0.1em] text-ink-muted uppercase">
-                    Échantillon · {formatNumber(sampleSize)} tweet
-                    {sampleSize > 1 ? 's' : ''} analysé
-                    {sampleSize > 1 ? 's' : ''} · {periodLabel}
-                  </p>
-                </div>
-
-                <VerdictBreakdown
-                  distribution={normalizedStats?.verdictDistribution}
-                  totalAnalyzed={normalizedStats?.totalAnalyzed ?? 0}
-                />
+                  <ScoreGauge score={score} label={`Indice de bullshit, ${periodLabel}`} className="mt-8" />
+                  <div className="mt-7 grid grid-cols-2 gap-4 border-t border-rule pt-5">
+                    <div><p className="eyebrow text-ink-muted">Échantillon</p><p className="mt-1.5 font-sans text-sm font-semibold text-ink">{formatNumber(sampleSize)} tweet{sampleSize > 1 ? 's' : ''}</p></div>
+                    <div><p className="eyebrow text-ink-muted">Période</p><p className="mt-1.5 font-sans text-sm font-semibold text-ink">{periodLabel}</p></div>
+                  </div>
+                </section>
               </section>
+
+              <div className="mt-10 flex flex-col gap-4 md:mt-12 lg:flex-row lg:items-center lg:justify-between">
+                <PeriodTabs value={period} onChange={handlePeriodChange} />
+                <div className="w-full lg:max-w-sm lg:shrink-0">
+                  <SearchField value={query} onChange={setQuery} onClear={handleClearSearch} onSubmit={handleSearchSubmit} busy={refreshing && isSearching} />
+                </div>
+              </div>
 
               <StatStrip stats={normalizedStats} worstTweet={leadTweet} />
 
@@ -595,21 +533,14 @@ function Home() {
                 )
               ) : leadTweet ? (
                 <>
-                  <section
-                    aria-label="À la une et méthode"
-                    className="mt-12 grid gap-10 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:gap-12"
-                  >
+                  <section aria-label="Dossier à la une et verdicts" className="mt-16 grid items-start gap-4 lg:grid-cols-[minmax(0,1.65fr)_minmax(18rem,0.75fr)]">
                     <LeadStory tweet={leadTweet} profile={profile} />
-                    {methodAside}
+                    <VerdictBreakdown distribution={normalizedStats?.verdictDistribution} totalAnalyzed={normalizedStats?.totalAnalyzed ?? 0} />
                   </section>
-
                   {renderResults()}
                 </>
               ) : (
-                <section
-                  aria-label="Archives et méthode"
-                  className="mt-12 grid gap-10 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:gap-12"
-                >
+                <section aria-label="Archives" className="mt-16">
                   {period !== 'all' ? (
                     <EmptyArchive
                       title="Aucune analyse sur cette période."
@@ -637,9 +568,10 @@ function Home() {
                       </button>
                     </EmptyArchive>
                   )}
-                  {methodAside}
                 </section>
               )}
+
+              <MethodAside score={score} sample={sampleSize} periodLabel={periodLabel} />
             </>
           )}
         </div>

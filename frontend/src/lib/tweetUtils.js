@@ -193,6 +193,7 @@ export function normalizeTweet(tweet) {
     quoted_tweet: normalizeQuotedTweet(
       tweet.quoted_tweet ?? tweet.quotedTweet,
     ),
+    reply_to: normalizeQuotedTweet(tweet.reply_to ?? tweet.replyTo),
     likes: Math.max(0, toNumber(tweet.likes, 0)),
     retweets: Math.max(0, toNumber(tweet.retweets, 0)),
     replies: Math.max(0, Math.floor(toNumber(tweet.replies, 0))),

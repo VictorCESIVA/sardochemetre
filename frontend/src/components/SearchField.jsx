@@ -19,20 +19,20 @@ export default function SearchField({
       </label>
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute top-1/2 left-0 -translate-y-1/2 text-ink-muted"
+        className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-ink-muted"
       >
-        <IconSearch className="h-3.5 w-3.5" />
+        <IconSearch className="h-4 w-4" />
       </span>
       <input
         id="archive-search"
         type="search"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="Rechercher dans les archives…"
+        placeholder="Un mot, une dinguerie…"
         autoComplete="off"
         spellCheck={false}
         enterKeyHint="search"
-        className="w-full border-b border-ink bg-transparent py-2 pr-28 pl-6 text-sm text-ink placeholder:text-ink-muted focus-visible:outline-offset-4"
+        className="h-12 w-full rounded-full border border-rule bg-paper-alt pr-20 pl-11 text-sm text-ink placeholder:text-ink-muted focus:border-ink-muted focus-visible:outline-offset-2"
       />
       {value && (
         <button
@@ -40,16 +40,17 @@ export default function SearchField({
           onClick={onClear}
           aria-label="Effacer la recherche"
           title="Effacer la recherche"
-          className="absolute top-1/2 right-[4.6rem] flex h-6 w-6 -translate-y-1/2 items-center justify-center text-ink-muted transition-colors hover:text-vermillion"
+          className="absolute top-1/2 right-14 flex h-8 w-8 -translate-y-1/2 items-center justify-center text-ink-muted transition-colors hover:text-vermillion"
         >
           <IconClose className="h-3.5 w-3.5" />
         </button>
       )}
       <button
         type="submit"
-        className="absolute top-1/2 right-0 -translate-y-1/2 font-mono text-[10px] tracking-[0.14em] text-ink uppercase transition-colors hover:text-vermillion"
+        aria-label="Lancer la recherche"
+        className="absolute top-1/2 right-3 flex h-8 w-10 -translate-y-1/2 items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-rule hover:text-vermillion"
       >
-        Chercher
+        <span className="font-mono text-sm" aria-hidden="true">↵</span>
       </button>
     </form>
   );

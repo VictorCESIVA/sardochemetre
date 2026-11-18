@@ -1,5 +1,4 @@
 import { Link } from 'react-router-dom';
-import SectionLabel from './SectionLabel';
 import TweetEmbed from './TweetEmbed';
 import VerdictBadge from './VerdictBadge';
 import { IconArrowRight } from './Icons';
@@ -16,44 +15,43 @@ export default function LeadStory({ tweet, profile = null }) {
   const href = `/tweet/${encodeURIComponent(String(tweet.id))}`;
 
   return (
-    <article aria-labelledby="lead-story-title">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink pb-2">
-        <SectionLabel as="h2" id="lead-story-title">
-          À la une
-        </SectionLabel>
-        <span className="eyebrow text-ink-muted">
-          Le plus bullshit de la page
-        </span>
+    <article aria-labelledby="lead-story-title" className="surface-card overflow-hidden">
+      <div className="flex items-center justify-between gap-4 border-b border-rule px-5 py-4 md:px-7">
+        <div className="flex items-center gap-3">
+          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-verdict-bullshit" />
+          <h2 id="lead-story-title" className="eyebrow text-ink">Le dossier chaud</h2>
+        </div>
+        <span className="eyebrow hidden text-ink-muted sm:block">Le score le plus élevé de la page</span>
       </div>
 
-      <div className="mt-5">
-        <TweetEmbed tweet={tweet} profile={profile} variant="full" />
-      </div>
-
-      <div className="mt-5 flex flex-wrap items-end justify-between gap-6 border-t border-rule pt-4">
-        <div className="flex flex-wrap items-end gap-4">
-          <VerdictBadge verdict={tweet.verdict || 'NON ANALYSÉ'} />
+      <div className="p-5 md:p-7">
+        <div className="flex items-start justify-between gap-5">
+          <div>
+            <VerdictBadge verdict={tweet.verdict || 'NON ANALYSÉ'} />
+            <p className="eyebrow mt-3 text-ink-muted">Verdict de la rédaction IA</p>
+          </div>
           {hasScore && (
-            <p className="font-title text-6xl leading-[0.8] tracking-[-0.055em] tabular-nums text-ink md:text-7xl">
-              {score}
-              <span className="ml-2 font-mono text-[10px] tracking-normal text-ink-muted">
-                /100
-              </span>
+            <p className="text-right font-title text-5xl leading-none tracking-[-0.07em] tabular-nums text-verdict-bullshit md:text-6xl">
+              {score}<span className="ml-1 font-mono text-[10px] tracking-normal text-ink-muted">/100</span>
             </p>
           )}
         </div>
 
-        {tweet.humor_comment && (
-          <p className="max-w-md font-title text-lg leading-snug break-words italic text-ink-muted md:text-xl">
-            « {tweet.humor_comment} »
-          </p>
-        )}
-      </div>
+        <div className="mt-7">
+          <TweetEmbed tweet={tweet} profile={profile} variant="full" className="!border-0 !bg-transparent !p-0" />
+        </div>
 
-      <Link to={href} className="link-editorial group mt-5 text-ink">
-        Lire l’analyse
-        <IconArrowRight className="h-3.5 w-3.5 transition-transform duration-150 group-hover:translate-x-1" />
-      </Link>
+        {tweet.humor_comment && (
+          <blockquote className="mt-6 border-l-2 border-vermillion pl-4 text-base leading-relaxed text-ink-muted">
+            « {tweet.humor_comment} »
+          </blockquote>
+        )}
+
+        <Link to={href} className="btn-primary mt-7">
+          Lire le dossier complet
+          <IconArrowRight className="h-3.5 w-3.5" />
+        </Link>
+      </div>
     </article>
   );
 }

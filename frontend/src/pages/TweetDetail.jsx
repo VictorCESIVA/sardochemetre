@@ -243,6 +243,15 @@ export default function TweetDetail() {
   const score = hasAnalysis ? Math.round(normalizeScore(rawScore, 0)) : null;
   const verdictLabel =
     tweet.verdict || (hasAnalysis ? 'NON CLASSÉ' : 'NON ANALYSÉ');
+  const scoreColor = !hasAnalysis
+    ? 'text-ink-muted'
+    : score >= 75
+      ? 'text-verdict-hot'
+      : score >= 50
+        ? 'text-verdict-bullshit'
+        : score >= 25
+          ? 'text-verdict-doubt'
+          : 'text-verdict-true';
   const factChecks = normalizeFactChecks(tweet.fact_checks);
   const reasoningText = getReasoningText(tweet);
   const humor = tweet.humor_comment?.trim();
@@ -273,34 +282,32 @@ export default function TweetDetail() {
       <Masthead compact aiStatus={aiStatus} />
 
       <main id="main-content" className="flex-1">
-        <article className="mx-auto w-full max-w-5xl px-5 py-8 md:px-8 md:py-12">
-          <Link to="/" className="link-editorial text-ink">
+        <article className="mx-auto w-full max-w-6xl px-5 py-8 md:px-8 md:py-12">
+          <Link to="/" className="link-editorial text-ink-muted">
             <IconArrowLeft className="h-3.5 w-3.5" />
-            Retour aux archives
+            Tous les dossiers
           </Link>
 
-          <header className="mt-8 md:mt-10">
-            <h1 className="eyebrow text-vermillion">
-              Analyse · Tweet #{tweet.id}
-            </h1>
+          <header className="mt-10 md:mt-12">
+            <p className="eyebrow text-vermillion">Dossier · Tweet #{tweet.id}</p>
+            <h1 className="display-title mt-4 text-[clamp(2.8rem,6vw,5.5rem)] text-ink">Le verdict est tombé.</h1>
           </header>
 
-          <div className="mt-5 grid items-start gap-8 lg:grid-cols-[minmax(0,1.4fr)_minmax(18.5rem,0.6fr)] lg:gap-10">
+          <div className="mt-9 grid items-start gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(19rem,0.65fr)]">
             <TweetEmbed tweet={tweet} profile={profile} variant="full" />
 
             <aside
               aria-labelledby="score-title"
-              className="flex flex-col rounded-[14px] border border-embed-rule bg-embed p-5 lg:sticky lg:top-8 lg:self-start"
+              className="surface-card flex flex-col p-6 lg:sticky lg:top-8 lg:self-start"
             >
-              <div className="flex items-baseline justify-between gap-2 border-b border-rule pb-2">
-                <h2 id="score-title" className="eyebrow text-ink-muted">
-                  Indice de bullshit
-                </h2>
+              <div className="flex items-center justify-between gap-2">
+                <h2 id="score-title" className="eyebrow text-ink">Le score</h2>
+                <span className="eyebrow text-ink-muted">0—100</span>
               </div>
 
               {hasAnalysis ? (
                 <div className="mt-4 flex items-end gap-2">
-                  <p className="font-title text-[clamp(4.75rem,7vw,6.5rem)] leading-[0.68] tracking-[-0.07em] tabular-nums text-ink">
+                  <p className={`font-title text-[clamp(4.75rem,7vw,6.5rem)] leading-[0.68] tracking-[-0.08em] tabular-nums ${scoreColor}`}>
                     {score}
                   </p>
                   <p className="mb-2 font-mono text-xs text-ink-muted">/100</p>
@@ -412,30 +419,22 @@ export default function TweetDetail() {
           )}
 
           {reasoningText && (
-            <section aria-labelledby="analysis-title" className="mt-12">
-              <div className="border-b border-ink pb-2">
-                <h2
-                  id="analysis-title"
-                  className="font-title text-2xl leading-tight tracking-[-0.03em] text-ink md:text-3xl"
-                >
-                  L’analyse
-                </h2>
-              </div>
+            <section aria-labelledby="analysis-title" className="surface-card mt-4 p-5 md:p-8">
+              <p className="eyebrow text-vermillion">01 · L’explication</p>
+              <h2 id="analysis-title" className="mt-3 font-title text-2xl leading-tight tracking-[-0.045em] text-ink uppercase md:text-3xl">
+                Pourquoi ce score ?
+              </h2>
               <div className="mt-6 max-w-3xl border-l-2 border-vermillion pl-5 md:pl-6">
-                <p className="whitespace-pre-wrap text-[16px] leading-[1.8] break-words text-ink md:text-[17px]">
-                  {reasoningText}
-                </p>
+                <p className="whitespace-pre-wrap text-[16px] leading-[1.8] break-words text-ink-muted md:text-[17px]">{reasoningText}</p>
               </div>
             </section>
           )}
 
           {factChecks.length > 0 && (
-            <section aria-labelledby="fact-checks-title" className="mt-12">
-              <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-ink pb-2">
-                <h2
-                  id="fact-checks-title"
-                  className="font-title text-2xl leading-tight tracking-[-0.03em] text-ink md:text-3xl"
-                >
+            <section aria-labelledby="fact-checks-title" className="surface-card mt-4 p-5 md:p-8">
+              <p className="eyebrow text-vermillion">02 · Les recoupements</p>
+              <div className="mt-3 flex flex-wrap items-baseline justify-between gap-3 border-b border-rule pb-5">
+                <h2 id="fact-checks-title" className="font-title text-2xl leading-tight tracking-[-0.045em] text-ink uppercase md:text-3xl">
                   Vérification des faits
                 </h2>
                 <span className="eyebrow text-ink-muted">
@@ -522,22 +521,11 @@ export default function TweetDetail() {
           )}
 
           {humor && (
-            <section aria-labelledby="humor-title" className="mt-12">
-              <div className="border-y border-ink py-10 text-center md:py-14">
-                <h2 id="humor-title" className="eyebrow text-ink-muted">
-                  Le mot de la fin
-                </h2>
-                <blockquote className="mx-auto mt-5 max-w-3xl font-title text-[clamp(1.5rem,3.4vw,2.75rem)] leading-[1.2] tracking-[-0.02em] break-words italic text-ink">
-                  <span aria-hidden="true" className="text-vermillion">
-                    «{' '}
-                  </span>
-                  {humor}
-                  <span aria-hidden="true" className="text-vermillion">
-                    {' '}
-                    »
-                  </span>
-                </blockquote>
-              </div>
+            <section aria-labelledby="humor-title" className="mt-4 rounded-3xl bg-vermillion px-5 py-10 text-center md:px-8 md:py-12">
+              <h2 id="humor-title" className="eyebrow text-paper/65">Le mot de la fin</h2>
+              <blockquote className="mx-auto mt-5 max-w-4xl font-title text-[clamp(1.35rem,3vw,2.4rem)] leading-[1.15] tracking-[-0.04em] break-words uppercase text-paper">
+                « {humor} »
+              </blockquote>
             </section>
           )}
 

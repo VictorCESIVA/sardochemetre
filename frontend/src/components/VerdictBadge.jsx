@@ -155,9 +155,9 @@ export default function VerdictBadge({ verdict, size = 'md', className = '' }) {
 
   return (
     <span
-      className={`inline-flex items-center rounded-[1px] border bg-transparent font-mono leading-none tracking-[0.12em] uppercase ${sizing} ${tone.text} ${tone.border} ${className}`}
+      className={`inline-flex items-center rounded-full border bg-paper font-mono font-medium leading-none tracking-[0.08em] uppercase ${sizing} ${tone.text} ${tone.border} ${className}`}
     >
-      <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 ${tone.dot}`} />
+      <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${tone.dot}`} />
       <span>{label}</span>
     </span>
   );

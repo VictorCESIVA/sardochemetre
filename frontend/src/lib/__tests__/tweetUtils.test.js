@@ -99,6 +99,17 @@ describe('normalizeTweet', () => {
         },
         { url: '' },
       ],
+      reply_to: {
+        id: 'p1',
+        content: 'Le tweet parent',
+        author: {
+          name: 'Sardoche 🇫🇷',
+          username: 'Sardoche',
+          avatar_url: 'https://pbs.twimg.com/parent.jpg',
+          verified: true,
+        },
+        media: [],
+      },
       quoted_tweet: {
         id: 'q1',
         content: 'Un tweet cité',
@@ -143,6 +154,11 @@ describe('normalizeTweet', () => {
       author: { username: 'someone', verified: false },
     });
     expect(tweet.quoted_tweet.media[0].type).toBe('animated_gif');
+    expect(tweet.reply_to).toMatchObject({
+      id: 'p1',
+      content: 'Le tweet parent',
+      author: { username: 'Sardoche' },
+    });
     expect(tweet.replies).toBe(12);
     expect(tweet.views).toBe(17000);
   });
@@ -158,6 +174,7 @@ describe('normalizeTweet', () => {
     expect(tweet.author).toBeNull();
     expect(tweet.media).toEqual([]);
     expect(tweet.quoted_tweet).toBeNull();
+    expect(tweet.reply_to).toBeNull();
     expect(tweet.replies).toBe(0);
     expect(tweet.views).toBe(0);
     expect(tweet.analyzed).toBe(false);

@@ -27,21 +27,15 @@ export default function ScoreGauge({
       aria-label={label}
       className={`w-full ${className}`}
     >
-      <div className="h-[7px] border border-rule bg-paper-alt p-[1px]">
+      <div className="h-2 overflow-hidden rounded-full bg-rule">
         <div
-          className={`h-full transition-[width] duration-700 ease-out ${colorForScore(safeScore)}`}
+          className={`h-full rounded-full transition-[width] duration-700 ease-out ${colorForScore(safeScore)}`}
           style={{ width: `${safeScore}%` }}
         />
       </div>
 
-      <div className="mt-1 flex justify-between" aria-hidden="true">
-        {TICKS.map((tick) => (
-          <span key={tick} className="h-1.5 w-px bg-ink-muted" />
-        ))}
-      </div>
-
       <div
-        className="mt-1 flex justify-between font-mono text-[9px] leading-none text-ink-muted"
+        className="mt-2 flex justify-between font-mono text-[9px] leading-none text-ink-muted"
         aria-hidden="true"
       >
         {TICKS.map((tick) => (

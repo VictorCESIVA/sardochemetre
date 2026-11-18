@@ -4,7 +4,7 @@ import TweetMedia from './TweetMedia';
 import TweetText from './TweetText';
 import VerifiedBadge from './VerifiedBadge';
 
-export default function QuotedTweet({ tweet, profile = null, compact = false }) {
+export default function QuotedTweet({ tweet, profile = null, compact = false, label = 'Tweet cité', showLabel = false }) {
   if (!tweet) return null;
 
   const author = resolveAuthor(tweet.author, profile);
@@ -15,11 +15,16 @@ export default function QuotedTweet({ tweet, profile = null, compact = false }) 
   return (
     <div
       role="group"
-      aria-label="Tweet cité"
+      aria-label={label}
       className={`rounded-[12px] border border-embed-rule bg-paper ${
         compact ? 'mt-2.5 w-full max-w-[34rem] p-2.5' : 'mt-3 p-3 md:p-3.5'
       }`}
     >
+      {showLabel && (
+        <p className="mb-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-ink-muted">
+          {label}
+        </p>
+      )}
       <div className="flex min-w-0 items-center gap-2">
         <TweetAvatar author={author} size={compact ? 20 : 24} />
         <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">

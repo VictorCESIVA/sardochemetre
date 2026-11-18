@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import TweetEmbed from './TweetEmbed';
 import VerdictBadge from './VerdictBadge';
-import { IconArrowRight } from './Icons';
+import { IconArrowUpRight } from './Icons';
 import { formatIndex } from '../lib/format';
 
 export default function TweetRow({ tweet, index = 1, profile = null }) {
@@ -16,39 +16,34 @@ export default function TweetRow({ tweet, index = 1, profile = null }) {
   return (
     <Link
       to={`/tweet/${encodeURIComponent(String(tweet.id))}`}
-      className="group block border-b border-rule px-2 py-5 transition-colors hover:bg-paper-alt md:px-3 md:py-6"
+      className="surface-card group flex h-full flex-col p-5 transition-[border-color,transform] duration-200 hover:-translate-y-0.5 hover:border-ink-muted md:p-6"
     >
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <span className="eyebrow text-ink-muted">
-              {formatIndex(index)}
-            </span>
-            <VerdictBadge verdict={verdict} size="sm" />
-          </div>
-
-          <div className="mt-3">
-            <TweetEmbed
-              tweet={tweet}
-              profile={profile}
-              variant="compact"
-            />
-          </div>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="font-mono text-[10px] text-ink-muted">
+            Dossier {formatIndex(index)}
+          </span>
+          <VerdictBadge verdict={verdict} size="sm" />
         </div>
 
-        <div className="flex shrink-0 flex-col items-end gap-2 pt-1">
-          {hasScore ? (
-            <p className="font-title text-3xl leading-none tracking-[-0.04em] tabular-nums text-ink md:text-4xl">
-              {score}
-              <span className="ml-1 font-mono text-[9px] tracking-normal text-ink-muted">
-                /100
-              </span>
-            </p>
-          ) : (
-            <p className="eyebrow text-ink-muted">En attente</p>
-          )}
-          <IconArrowRight className="h-4 w-4 text-ink-muted transition-transform duration-150 group-hover:translate-x-1 group-hover:text-vermillion" />
-        </div>
+        {hasScore ? (
+          <p className="shrink-0 font-title text-2xl leading-none tracking-[-0.05em] tabular-nums text-ink">
+            {score}<span className="ml-1 font-mono text-[9px] tracking-normal text-ink-muted">/100</span>
+          </p>
+        ) : (
+          <p className="eyebrow shrink-0 text-ink-muted">En attente</p>
+        )}
+      </div>
+
+      <div className="mt-6 flex-1">
+        <TweetEmbed tweet={tweet} profile={profile} variant="compact" />
+      </div>
+
+      <div className="mt-6 flex items-center justify-between border-t border-rule pt-4">
+        <span className="eyebrow text-ink-muted transition-colors group-hover:text-ink">Ouvrir le dossier</span>
+        <span className="flex h-8 w-8 items-center justify-center rounded-full border border-rule text-ink-muted transition-[background-color,color,transform] group-hover:rotate-12 group-hover:bg-vermillion group-hover:text-paper">
+          <IconArrowUpRight className="h-3.5 w-3.5" />
+        </span>
       </div>
     </Link>
   );

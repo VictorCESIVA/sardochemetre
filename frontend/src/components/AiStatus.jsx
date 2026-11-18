@@ -15,7 +15,7 @@ export default function AiStatus({ status = null, className = '' }) {
       className={`inline-flex items-center gap-2 font-mono text-[10px] leading-relaxed tracking-[0.12em] text-ink-muted uppercase ${className}`}
       title={title}
     >
-      <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 ${dotClass}`} />
+      <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} />
       <span>IA OpenCode · DeepSeek V4.1 Flash</span>
       <span className="sr-only">— {stateLabel}</span>
     </span>
