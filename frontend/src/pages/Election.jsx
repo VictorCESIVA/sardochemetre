@@ -10,6 +10,7 @@ import {
   Masthead,
   PeriodTabs,
   SectionLabel,
+  TrendChart,
   TweetRow,
 } from '../components';
 import { IconArrowRight } from '../components/Icons';
@@ -88,6 +89,7 @@ function MentionRow({ mention }) {
 function Election() {
   const [period, setPeriod] = useState('all');
   const [board, setBoard] = useState(null);
+  const [history, setHistory] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [aiStatus, setAiStatus] = useState(null);
@@ -141,6 +143,26 @@ function Election() {
     }
 
     loadBoard();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [period, retryKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadTrend() {
+      try {
+        const data = await tweetService.getHistory(period, 'week');
+        if (!cancelled) setHistory(data);
+      } catch (trendError) {
+        console.error('Courbe indisponible :', trendError);
+        if (!cancelled) setHistory(null);
+      }
+    }
+
+    loadTrend();
 
     return () => {
       cancelled = true;
@@ -244,6 +266,22 @@ function Election() {
                   <p className="mt-3 font-mono text-[10px] text-ink-muted">
                     candidats, partis et institutions
                   </p>
+                </div>
+              </section>
+
+              <section aria-label="Courbe du dossier" className="surface-card mt-4 p-5 md:p-6">
+                <div className="flex flex-wrap items-end justify-between gap-4">
+                  <p className="eyebrow text-vermillion">La courbe du dossier</p>
+                  <p className="font-mono text-[10px] text-ink-muted">
+                    Bullshit moyen des tweets politiques, par semaine
+                  </p>
+                </div>
+                <div className="mt-5">
+                  <TrendChart
+                    points={history?.points ?? []}
+                    bucket="week"
+                    series="both"
+                  />
                 </div>
               </section>
 

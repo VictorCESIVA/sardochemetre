@@ -21,6 +21,7 @@ import {
   SearchField,
   SectionLabel,
   StatStrip,
+  TrendChart,
   TweetRow,
   VerdictBreakdown,
 } from '../components';
@@ -34,6 +35,12 @@ const PERIOD_LABELS = {
   month: 'Ce mois',
   all: 'Tout l’historique',
 };
+
+const BUCKETS = [
+  { id: 'day', label: 'Jour' },
+  { id: 'week', label: 'Semaine' },
+  { id: 'month', label: 'Mois' },
+];
 
 function normalizeListPagination(data, requestedPage) {
   const source = data || {};
@@ -169,6 +176,8 @@ function Home() {
   const [globalScore, setGlobalScore] = useState(null);
   const [tweets, setTweets] = useState([]);
   const [pagination, setPagination] = useState(null);
+  const [history, setHistory] = useState(null);
+  const [historyBucket, setHistoryBucket] = useState('week');
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
@@ -334,6 +343,26 @@ function Home() {
     };
   }, [period, page, debouncedQuery, retryKey]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadHistory() {
+      try {
+        const data = await tweetService.getHistory(period, historyBucket);
+        if (!cancelled) setHistory(data);
+      } catch (historyError) {
+        console.error('Courbe indisponible :', historyError);
+        if (!cancelled) setHistory(null);
+      }
+    }
+
+    loadHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [period, historyBucket, retryKey]);
+
   const normalizedStats = useMemo(
     () => (stats ? normalizeStats(stats, period) : null),
     [stats, period],
@@ -498,6 +527,44 @@ function Home() {
               </div>
 
               <StatStrip stats={normalizedStats} worstTweet={leadTweet} />
+
+              <section aria-labelledby="trend-title" className="surface-card mt-4 p-5 md:p-8">
+                <div className="flex flex-wrap items-end justify-between gap-4">
+                  <div>
+                    <p className="eyebrow text-vermillion">La tendance</p>
+                    <h2 id="trend-title" className="mt-2 font-title text-2xl leading-none tracking-[-0.055em] text-ink uppercase md:text-3xl">
+                      L’indice dans le temps.
+                    </h2>
+                  </div>
+                  <ul className="flex items-center gap-1 rounded-full border border-rule bg-paper-alt p-1">
+                    {BUCKETS.map((bucket) => {
+                      const active = historyBucket === bucket.id;
+                      return (
+                        <li key={bucket.id}>
+                          <button
+                            type="button"
+                            onClick={() => setHistoryBucket(bucket.id)}
+                            aria-current={active ? 'true' : undefined}
+                            className={`rounded-full px-3.5 py-1.5 font-mono text-[10px] font-medium tracking-[0.08em] whitespace-nowrap uppercase transition-colors ${
+                              active
+                                ? 'bg-vermillion text-paper'
+                                : 'text-ink-muted hover:bg-rule/60 hover:text-ink'
+                            }`}
+                          >
+                            {bucket.label}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+                <div className="mt-6">
+                  <TrendChart
+                    points={history?.points ?? []}
+                    bucket={history?.bucket ?? historyBucket}
+                  />
+                </div>
+              </section>
 
               {isSearching ? (
                 tweets.length > 0 ? (

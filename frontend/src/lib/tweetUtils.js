@@ -66,7 +66,7 @@ export function normalizeVerdict(value, fallback = 'DOUTEUX') {
 }
 
 /**
- * Converts fact checks to an array of `{ claim, verdict, note }`.
+ * Converts fact checks to an array of `{ claim, verdict, note, sources }`.
  * A JSON string is tolerated because some models or SQLite rows return one.
  */
 export function normalizeFactChecks(value) {
@@ -85,7 +85,7 @@ export function normalizeFactChecks(value) {
   return checks
     .map((check) => {
       if (typeof check === 'string') {
-        return { claim: check, verdict: 'invérifiable', note: '' };
+        return { claim: check, verdict: 'invérifiable', note: '', sources: [] };
       }
       if (!check || typeof check !== 'object') return null;
 
@@ -93,9 +93,74 @@ export function normalizeFactChecks(value) {
         claim: check.claim == null ? '' : String(check.claim),
         verdict: check.verdict == null ? 'invérifiable' : String(check.verdict),
         note: check.note == null ? '' : String(check.note),
+        sources: normalizeCheckSources(check.sources),
       };
     })
     .filter(Boolean);
+}
+
+/**
+ * Sources cited by a fact check: `{ title, url }`, http(s) only, capped at 3.
+ */
+export function normalizeCheckSources(value) {
+  if (!Array.isArray(value)) return [];
+
+  const seen = new Set();
+
+  return value
+    .map((source) => {
+      if (!source || typeof source !== 'object') return null;
+
+      const url = String(source.url || '').trim();
+      if (!/^https?:\/\//i.test(url) || seen.has(url)) return null;
+
+      seen.add(url);
+      return {
+        title:
+          String(source.title || '').trim().slice(0, 160) || url,
+        url,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+/**
+ * Sources consulted by the analysis pipeline (Wikipedia, Tavily):
+ * `{ title, url, snippet, provider }`, http(s) URLs only, deduplicated.
+ */
+export function normalizeSources(value) {
+  let sources = value;
+
+  if (typeof sources === 'string') {
+    try {
+      sources = JSON.parse(sources);
+    } catch {
+      return [];
+    }
+  }
+
+  if (!Array.isArray(sources)) return [];
+
+  const seen = new Set();
+
+  return sources
+    .map((source) => {
+      if (!source || typeof source !== 'object') return null;
+
+      const url = String(source.url || '').trim();
+      if (!/^https?:\/\//i.test(url) || seen.has(url)) return null;
+
+      seen.add(url);
+      return {
+        title: String(source.title || '').trim().slice(0, 160) || url,
+        url,
+        snippet: String(source.snippet || '').trim(),
+        provider: String(source.provider || ''),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 8);
 }
 
 const MEDIA_TYPES = new Set(['photo', 'video', 'animated_gif']);
@@ -255,6 +320,7 @@ export function normalizeTweet(tweet) {
           : '',
     fact_checks: normalizeFactChecks(tweet.fact_checks ?? analysis.fact_checks),
     mentions: normalizeMentions(tweet.mentions ?? analysis.mentions),
+    sources: normalizeSources(tweet.sources ?? analysis.sources),
     humor_comment:
       tweet.humor_comment != null
         ? String(tweet.humor_comment)
@@ -410,6 +476,50 @@ export function normalizeBullshitmetre(data, period = 'all') {
     timestamp:
       typeof source.timestamp === 'string'
         ? source.timestamp
+        : new Date().toISOString(),
+  };
+}
+
+/**
+ * Normalizes a backend history response (GET /api/tweets/historique):
+ * average score per day/week/month bucket, with the political sub-series.
+ */
+export function normalizeHistory(data, period = 'all', bucket = 'week') {
+  const source = data && typeof data === 'object' ? data : {};
+  const safeBucket = ['day', 'week', 'month'].includes(source.bucket)
+    ? source.bucket
+    : bucket;
+
+  const points = (Array.isArray(source.points) ? source.points : [])
+    .map((point) => {
+      if (!point || typeof point !== 'object') return null;
+
+      const date = String(point.date || '').trim();
+      if (!date) return null;
+
+      const politicalCount = Math.max(
+        0,
+        Math.floor(toNumber(point.politicalCount, 0)),
+      );
+
+      return {
+        date,
+        avgScore: normalizeScore(point.avgScore, 0),
+        count: Math.max(0, Math.floor(toNumber(point.count, 0))),
+        politicalCount,
+        avgPoliticalScore: normalizeScore(point.avgPoliticalScore, 0),
+        hasPolitical: politicalCount > 0,
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    period: source.period ?? period,
+    bucket: safeBucket,
+    points,
+    updatedAt:
+      typeof source.updatedAt === 'string'
+        ? source.updatedAt
         : new Date().toISOString(),
   };
 }

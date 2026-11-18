@@ -4,6 +4,7 @@ import * as tweetService from '../services/tweetService';
 import {
   normalizeFactChecks,
   normalizeScore,
+  normalizeSources,
   normalizeTweet,
 } from '../lib/tweetUtils';
 import { formatNumber, formatTweetDate } from '../lib/format';
@@ -51,6 +52,36 @@ function Spinner({ className = 'h-3.5 w-3.5' }) {
       aria-hidden="true"
       className={`inline-block shrink-0 animate-spin rounded-full border border-current border-t-transparent ${className}`}
     />
+  );
+}
+
+function sourceDomain(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+}
+
+function CheckSources({ sources = [] }) {
+  if (sources.length === 0) return null;
+
+  return (
+    <ul className="mt-2 flex flex-wrap gap-2">
+      {sources.map((source) => (
+        <li key={source.url}>
+          <a
+            href={source.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-full border border-rule px-2.5 py-1 font-mono text-[9px] tracking-[0.08em] text-ink-muted uppercase transition-colors hover:border-ink hover:text-ink"
+          >
+            <span aria-hidden="true">↗</span>
+            {sourceDomain(source.url)}
+          </a>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -253,6 +284,7 @@ export default function TweetDetail() {
           ? 'text-verdict-doubt'
           : 'text-verdict-true';
   const factChecks = normalizeFactChecks(tweet.fact_checks);
+  const consultedSources = normalizeSources(tweet.sources);
   const reasoningText = getReasoningText(tweet);
   const humor = tweet.humor_comment?.trim();
 
@@ -487,6 +519,7 @@ export default function TweetDetail() {
                         </td>
                         <td className="py-4 text-sm leading-relaxed break-words text-ink-muted">
                           {check.note || '—'}
+                          <CheckSources sources={check.sources} />
                         </td>
                       </tr>
                     ))}
@@ -514,9 +547,57 @@ export default function TweetDetail() {
                         {check.note}
                       </p>
                     )}
+                    <CheckSources sources={check.sources} />
                   </div>
                 ))}
               </div>
+            </section>
+          )}
+
+          {consultedSources.length > 0 && (
+            <section aria-labelledby="sources-title" className="surface-card mt-4 p-5 md:p-8">
+              <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-rule pb-5">
+                <h2 id="sources-title" className="font-title text-2xl leading-tight tracking-[-0.045em] text-ink uppercase md:text-3xl">
+                  Sources consultées
+                </h2>
+                <span className="eyebrow text-ink-muted">
+                  {formatNumber(consultedSources.length)} résultat
+                  {consultedSources.length > 1 ? 's' : ''}
+                </span>
+              </div>
+              <p className="mt-4 max-w-2xl text-xs leading-relaxed text-ink-muted">
+                Recherche automatique (Wikipédia
+                {consultedSources.some((source) => source.provider === 'tavily')
+                  ? ' et web'
+                  : ''}{' '}
+                en deuxième passe d’analyse) : ces extraits ont été soumis au
+                modèle, qui ne peut citer que ces URL. Une analyse plus ancienne
+                peut n’en avoir aucune.
+              </p>
+              <ul className="mt-6 grid gap-4 md:grid-cols-2">
+                {consultedSources.map((source) => (
+                  <li key={source.url} className="rounded-2xl border border-rule p-4">
+                    <a
+                      href={source.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group flex items-start justify-between gap-3"
+                    >
+                      <span className="text-sm leading-snug font-semibold text-ink group-hover:text-vermillion">
+                        {source.title}
+                      </span>
+                      <span className="eyebrow shrink-0 text-ink-muted">
+                        {sourceDomain(source.url)}
+                      </span>
+                    </a>
+                    {source.snippet && (
+                      <p className="mt-2 text-xs leading-relaxed text-ink-muted">
+                        « {source.snippet} »
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
             </section>
           )}
 

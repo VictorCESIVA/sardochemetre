@@ -5,8 +5,11 @@ import {
   normalizeBullshitmetre,
   normalizeElectionBoard,
   normalizeFactChecks,
+  normalizeHistory,
   normalizeMentions,
+  normalizeCheckSources,
   normalizeScore,
+  normalizeSources,
   normalizeStats,
   normalizeTweet,
   normalizeVerdict,
@@ -55,7 +58,7 @@ describe('normalizeTweet', () => {
     });
     expect(tweet).not.toHaveProperty('analysis');
     expect(tweet.fact_checks).toEqual([
-      { claim: 'Une affirmation', verdict: 'faux', note: 'Une note' },
+      { claim: 'Une affirmation', verdict: 'faux', note: 'Une note', sources: [] },
     ]);
   });
 
@@ -70,7 +73,7 @@ describe('normalizeTweet', () => {
     });
 
     expect(tweet.fact_checks).toEqual([
-      { claim: 'Affirmation', verdict: 'invérifiable', note: 'Note' },
+      { claim: 'Affirmation', verdict: 'invérifiable', note: 'Note', sources: [] },
     ]);
   });
 
@@ -186,7 +189,7 @@ describe('normalizeTweet', () => {
     expect(normalizeFactChecks('{not json')).toEqual([]);
     expect(normalizeFactChecks(null)).toEqual([]);
     expect(normalizeFactChecks(['Une affirmation'])).toEqual([
-      { claim: 'Une affirmation', verdict: 'invérifiable', note: '' },
+      { claim: 'Une affirmation', verdict: 'invérifiable', note: '', sources: [] },
     ]);
   });
 });
@@ -552,5 +555,132 @@ describe('normalizeElectionBoard', () => {
       tweets: [],
     });
     expect(!Number.isNaN(Date.parse(board.updatedAt))).toBe(true);
+  });
+});
+
+describe('normalizeCheckSources', () => {
+  it('keeps http(s) sources, drops the rest and caps at 3', () => {
+    const sources = normalizeCheckSources([
+      { title: 'Wikipédia', url: 'https://fr.wikipedia.org/wiki/Retraite' },
+      { title: 'Doublon', url: 'https://fr.wikipedia.org/wiki/Retraite' },
+      { title: 'Sans titre', url: 'https://exemple.fr/a' },
+      { title: 'Pas http', url: 'javascript:alert(1)' },
+      { title: 'Tavily', url: 'https://exemple.fr/b' },
+      { title: 'Trop', url: 'https://exemple.fr/c' },
+      'pas un objet',
+    ]);
+
+    expect(sources).toEqual([
+      { title: 'Wikipédia', url: 'https://fr.wikipedia.org/wiki/Retraite' },
+      { title: 'Sans titre', url: 'https://exemple.fr/a' },
+      { title: 'Tavily', url: 'https://exemple.fr/b' },
+    ]);
+  });
+
+  it('tolerates a missing array', () => {
+    expect(normalizeCheckSources(null)).toEqual([]);
+    expect(normalizeCheckSources('pas un tableau')).toEqual([]);
+  });
+});
+
+describe('normalizeSources', () => {
+  it('normalizes consulted sources with provider and snippet', () => {
+    const sources = normalizeSources([
+      {
+        title: 'Retraite en France',
+        url: 'https://fr.wikipedia.org/wiki/Retraite_en_France',
+        snippet: 'Extrait court',
+        provider: 'wikipedia',
+      },
+      { title: 'Doublon', url: 'https://fr.wikipedia.org/wiki/Retraite_en_France' },
+      null,
+    ]);
+
+    expect(sources).toEqual([
+      {
+        title: 'Retraite en France',
+        url: 'https://fr.wikipedia.org/wiki/Retraite_en_France',
+        snippet: 'Extrait court',
+        provider: 'wikipedia',
+      },
+    ]);
+  });
+
+  it('parses sources stored as a JSON string', () => {
+    const sources = normalizeSources(
+      JSON.stringify([{ title: 'Tavily', url: 'https://exemple.fr/x' }]),
+    );
+
+    expect(sources).toEqual([
+      {
+        title: 'Tavily',
+        url: 'https://exemple.fr/x',
+        snippet: '',
+        provider: '',
+      },
+    ]);
+    expect(normalizeSources('cassé')).toEqual([]);
+  });
+
+  it('exposes sources on the flat tweet', () => {
+    const tweet = normalizeTweet({
+      id: 'sources-1',
+      content: 'Tweet sourcé.',
+      sources: [{ title: 'S', url: 'https://exemple.fr/s', provider: 'tavily' }],
+    });
+
+    expect(tweet.sources).toHaveLength(1);
+    expect(tweet.sources[0].provider).toBe('tavily');
+  });
+});
+
+describe('normalizeHistory', () => {
+  const HISTORY = {
+    period: 'all',
+    bucket: 'week',
+    points: [
+      { date: '2026-11-02', avgScore: 38.5, count: 4, politicalCount: 3, avgPoliticalScore: 45.2 },
+      { date: '2026-11-09', avgScore: 42, count: 2, politicalCount: 0, avgPoliticalScore: null },
+      { date: '', avgScore: 10, count: 1, politicalCount: 0 },
+    ],
+    updatedAt: '2026-11-18T14:00:00.000Z',
+  };
+
+  it('normalizes points and flags political series', () => {
+    const history = normalizeHistory(HISTORY, 'all', 'week');
+
+    expect(history.period).toBe('all');
+    expect(history.bucket).toBe('week');
+    expect(history.updatedAt).toBe('2026-11-18T14:00:00.000Z');
+    expect(history.points).toHaveLength(2);
+
+    expect(history.points[0]).toEqual({
+      date: '2026-11-02',
+      avgScore: 38.5,
+      count: 4,
+      politicalCount: 3,
+      avgPoliticalScore: 45.2,
+      hasPolitical: true,
+    });
+
+    expect(history.points[1].hasPolitical).toBe(false);
+    expect(history.points[1].avgPoliticalScore).toBe(0);
+  });
+
+  it('repairs an unknown bucket and a malformed payload', () => {
+    const repaired = normalizeHistory(
+      { ...HISTORY, bucket: 'annee' },
+      'all',
+      'month',
+    );
+    expect(repaired.bucket).toBe('month');
+
+    const empty = normalizeHistory(null, 'week', 'day');
+    expect(empty).toMatchObject({
+      period: 'week',
+      bucket: 'day',
+      points: [],
+    });
+    expect(!Number.isNaN(Date.parse(empty.updatedAt))).toBe(true);
   });
 });

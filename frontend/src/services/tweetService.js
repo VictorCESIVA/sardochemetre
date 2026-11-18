@@ -10,6 +10,7 @@ import {
 import {
   normalizeBullshitmetre,
   normalizeElectionBoard,
+  normalizeHistory,
   normalizeStats,
   normalizeTweet,
 } from '../lib/tweetUtils';
@@ -167,6 +168,26 @@ export async function getElectionBoard(period = 'all') {
     return normalizeElectionBoard(response.data, period);
   } catch (error) {
     throw toRequestError(error, 'Impossible de charger le dossier élection.');
+  }
+}
+
+/**
+ * Fetches the BullshitMètre trend: average score per day/week/month bucket,
+ * with the political tweets as a second series.
+ * @param {string} period - 'day' | 'week' | 'month' | 'all'
+ * @param {string} bucket - 'day' | 'week' | 'month'
+ * @returns {Promise<Object>} { period, bucket, points, updatedAt }
+ */
+export async function getHistory(period = 'all', bucket = 'week') {
+  const safeBucket = ['day', 'week', 'month'].includes(bucket) ? bucket : 'week';
+
+  try {
+    const response = await axios.get(`${API_BASE_URL}/api/tweets/historique`, {
+      params: { period: period || 'all', bucket: safeBucket },
+    });
+    return normalizeHistory(response.data, period, safeBucket);
+  } catch (error) {
+    throw toRequestError(error, 'Impossible de charger la courbe de l’indice.');
   }
 }
 

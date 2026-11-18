@@ -17,6 +17,7 @@ export { default as TweetEmbed } from './TweetEmbed';
 export { default as TweetMedia } from './TweetMedia';
 export { default as TweetRow } from './TweetRow';
 export { default as TweetText } from './TweetText';
+export { default as TrendChart } from './TrendChart';
 export { default as VerdictBadge } from './VerdictBadge';
 export { default as VerdictBreakdown } from './VerdictBreakdown';
 export { default as VerifiedBadge } from './VerifiedBadge';
