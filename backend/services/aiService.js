@@ -106,7 +106,7 @@ async function analyzeTweet(content, options = {}) {
   }
 
   if (provider.provider === 'anthropic' && provider.configured) {
-    return claudeService.analyzeTweet(content);
+    return claudeService.analyzeTweet(content, options);
   }
 
   if (!mockFallbackAllowed(env)) return null;
@@ -166,7 +166,7 @@ async function analyzeWithRealProvider(content, options = {}) {
     return analysis;
   }
 
-  const analysis = await claudeService.analyzeTweet(content);
+  const analysis = await claudeService.analyzeTweet(content, options);
   if (!analysis) {
     throw createAiError(
       'AI_PROVIDER_ERROR',

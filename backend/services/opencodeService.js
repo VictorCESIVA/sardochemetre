@@ -7,11 +7,16 @@ const {
   extractJson,
   normalizeAnalysis,
 } = require('./claudeService');
+const {
+  buildAnalysisPrompt,
+  loadTweetImages,
+  toOpenAiImageParts,
+} = require('./tweetContext');
 
 const DEFAULT_MODEL = 'deepseek-v4.1-flash';
 const DEFAULT_PLAN = 'payg';
 const DEFAULT_MAX_TOKENS = 3000;
-const DEFAULT_TIMEOUT_MS = 30000;
+const DEFAULT_TIMEOUT_MS = 60000;
 const USER_AGENT = 'sardochemetre/1.0';
 const PAYG_BASE_URL = 'https://opencode.ai/inference';
 const GO_BASE_URL = 'https://opencode.ai/inference/go';
@@ -174,22 +179,63 @@ async function analyzeTweet(content, options = {}) {
     return null;
   }
 
-  const body = {
+  const tweet = options.tweet || null;
+  const images = tweet
+    ? await loadTweetImages(tweet, { fetchImage: options.fetchImage })
+    : [];
+
+  const buildBody = (imageList) => ({
     model: config.model,
     temperature: options.temperature === undefined ? 0.4 : options.temperature,
     max_tokens:
       options.maxTokens === undefined ? getMaxTokens(env) : options.maxTokens,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: `Tweet à analyser :\n${text}` },
+      {
+        role: 'user',
+        content:
+          imageList.length > 0
+            ? [
+                {
+                  type: 'text',
+                  text: buildAnalysisPrompt(text, tweet, { withImages: true }),
+                },
+                ...toOpenAiImageParts(imageList),
+              ]
+            : buildAnalysisPrompt(text, tweet, { withImages: false }),
+      },
     ],
-  };
+  });
 
   try {
-    const response = await axios.post(buildEndpoint(config.baseUrl), body, {
-      headers: buildHeaders(config, env),
-      timeout: options.timeout || DEFAULT_TIMEOUT_MS,
-    });
+    let response;
+    try {
+      response = await axios.post(
+        buildEndpoint(config.baseUrl),
+        buildBody(images),
+        {
+          headers: buildHeaders(config, env),
+          timeout: options.timeout || DEFAULT_TIMEOUT_MS,
+        }
+      );
+    } catch (error) {
+      const status = error && error.response ? error.response.status : null;
+      if (images.length === 0 || ![400, 413, 415, 422].includes(status)) {
+        throw error;
+      }
+
+      console.warn(
+        `[OpenCode] Images refusées (HTTP ${status}) : nouvelle tentative sans image`
+      );
+      response = await axios.post(
+        buildEndpoint(config.baseUrl),
+        buildBody([]),
+        {
+          headers: buildHeaders(config, env),
+          timeout: options.timeout || DEFAULT_TIMEOUT_MS,
+        }
+      );
+    }
 
     const raw = extractContent(response.data);
     if (!raw) {

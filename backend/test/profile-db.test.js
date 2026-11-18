@@ -63,6 +63,7 @@ test('migration profil/embed et persistance des nouveaux champs', () => {
       'views',
       'media',
       'quoted_tweet',
+      'reply_to',
     ]) {
       assert.ok(columns.includes(column), `colonne ${column} manquante`);
     }
@@ -106,6 +107,18 @@ test('migration profil/embed et persistance des nouveaux champs', () => {
         },
       ],
     };
+    const replyTo = {
+      id: '7001',
+      content: 'Tweet parent',
+      author: {
+        name: 'Sardoche 🇫🇷',
+        username: 'Sardoche',
+        avatar_url:
+          'https://pbs.twimg.com/profile_images/1777701085828022272/epxsnXzo_400x400.jpg',
+        verified: true,
+      },
+      media: [],
+    };
     const media = [
       {
         type: 'photo',
@@ -128,6 +141,7 @@ test('migration profil/embed et persistance des nouveaux champs', () => {
       author: AUTHOR,
       media,
       quoted_tweet: quotedTweet,
+      reply_to: replyTo,
     });
 
     assert.equal(saved.source, 'profile');
@@ -136,6 +150,7 @@ test('migration profil/embed et persistance des nouveaux champs', () => {
     assert.deepEqual(saved.author, AUTHOR);
     assert.deepEqual(saved.media, media);
     assert.deepEqual(saved.quoted_tweet, quotedTweet);
+    assert.deepEqual(saved.reply_to, replyTo);
 
     repo.saveProfile({ followers: 594000 });
     assert.equal(repo.getProfile().followers, 594000);
@@ -158,6 +173,7 @@ test('migration profil/embed et persistance des nouveaux champs', () => {
     });
     assert.deepEqual(plain.media, []);
     assert.equal(plain.quoted_tweet, null);
+    assert.equal(plain.reply_to, null);
     assert.equal(plain.replies, 0);
     assert.equal(plain.views, 0);
     assert.deepEqual(plain.author, AUTHOR);

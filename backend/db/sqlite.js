@@ -123,6 +123,7 @@ function mapTweet(row, author = null) {
     author: author || null,
     media: parseMedia(row.media),
     quoted_tweet: parseQuotedTweet(row.quoted_tweet),
+    reply_to: parseQuotedTweet(row.reply_to),
     analyzed: Boolean(row.analyzed),
     bullshit_score:
       row.bullshit_score === null || row.bullshit_score === undefined
@@ -281,6 +282,7 @@ const TWEET_SELECT = `
     t.views,
     t.media,
     t.quoted_tweet,
+    t.reply_to,
     t.source,
     t.analyzed,
     a.bullshit_score,
@@ -325,6 +327,7 @@ function listTweets({ page = 1, limit = 20, period = 'all', q = '' } = {}) {
         t.views,
         t.media,
         t.quoted_tweet,
+        t.reply_to,
         t.source,
         t.analyzed,
         a.bullshit_score,
@@ -397,6 +400,7 @@ function searchTweets(q) {
         t.views,
         t.media,
         t.quoted_tweet,
+        t.reply_to,
         t.source,
         t.analyzed,
         a.bullshit_score,
@@ -512,12 +516,14 @@ function saveTweet(tweet) {
     tweet.quoted_tweet === undefined
       ? null
       : parseQuotedTweet(tweet.quoted_tweet);
+  const replyTo =
+    tweet.reply_to === undefined ? null : parseQuotedTweet(tweet.reply_to);
 
   getDb()
     .prepare(`
       INSERT INTO tweets
-        (id, content, posted_at, likes, retweets, replies, views, media, quoted_tweet, source, analyzed)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        (id, content, posted_at, likes, retweets, replies, views, media, quoted_tweet, reply_to, source, analyzed)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
       ON CONFLICT(id) DO UPDATE SET
         content = excluded.content,
         posted_at = excluded.posted_at,
@@ -527,6 +533,7 @@ function saveTweet(tweet) {
         views = excluded.views,
         media = excluded.media,
         quoted_tweet = excluded.quoted_tweet,
+        reply_to = excluded.reply_to,
         source = excluded.source
     `)
     .run(
@@ -539,6 +546,7 @@ function saveTweet(tweet) {
       Number(tweet.views) || 0,
       JSON.stringify(media),
       quotedTweet ? JSON.stringify(quotedTweet) : null,
+      replyTo ? JSON.stringify(replyTo) : null,
       source
     );
 

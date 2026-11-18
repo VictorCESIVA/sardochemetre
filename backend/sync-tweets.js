@@ -8,6 +8,7 @@ const {
   getRecentTweets,
   getProfileSnapshot,
   getTwitterSource,
+  enrichTweets,
   VALID_SOURCES,
   DEFAULT_LIMIT,
   MAX_LIMIT,
@@ -173,6 +174,9 @@ function formatTweetLine(tweet) {
   if (tweet.quoted_tweet) {
     details.push(`citation:${tweet.quoted_tweet.id}`);
   }
+  if (tweet.reply_to) {
+    details.push(`réponse:${tweet.reply_to.id}`);
+  }
 
   return `  ${tweet.posted_at} | ${tweet.id} | ${tweet.likes} likes | ${
     tweet.retweets
@@ -196,7 +200,10 @@ async function analyzePending(repo, pending, { concurrency, env }) {
       const tweet = pending[index];
 
       try {
-        const analysis = await aiService.analyzeTweet(tweet.content, { env });
+        const analysis = await aiService.analyzeTweet(tweet.content, {
+          env,
+          tweet,
+        });
 
         if (!analysis) {
           failures += 1;
@@ -259,10 +266,11 @@ async function runSync(options, env = process.env) {
   }
 
   console.log(`[sync] Récupération de ${options.limit} tweet(s)...`);
-  const tweets = await getRecentTweets({
+  const fetched = await getRecentTweets({
     limit: options.limit,
     env: sourceEnv,
   });
+  const tweets = await enrichTweets(fetched, { env: sourceEnv });
 
   if (tweets.length === 0) {
     console.error('[sync] Aucun tweet récupéré : rien à importer.');

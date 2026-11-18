@@ -6,6 +6,7 @@ const {
   getRecentTweets,
   getProfileSnapshot,
   getTwitterSource,
+  enrichTweets,
 } = require('./services/twitterService');
 const aiService = require('./services/aiService');
 const {
@@ -26,54 +27,65 @@ function resolveLockTtl(env = process.env, override = undefined) {
 }
 
 function schedulerReadiness(env = process.env) {
-  const missing = [];
-
   if (String(env.DEMO_MODE || '').toLowerCase() === 'true') {
-    return { ready: false, reason: 'DEMO_MODE=true' };
+    return {
+      ready: false,
+      reason: 'DEMO_MODE=true',
+      analysisReady: false,
+      analysisReason: 'DEMO_MODE=true',
+    };
   }
 
   let source;
   try {
     source = getTwitterSource(env);
   } catch (error) {
-    return { ready: false, reason: error.message };
+    return {
+      ready: false,
+      reason: error.message,
+      analysisReady: false,
+      analysisReason: error.message,
+    };
+  }
+
+  // Seule l'API X exige un token ; syndication et profil sont publics.
+  if (source === 'x' && !String(env.TWITTER_BEARER_TOKEN || '').trim()) {
+    return {
+      ready: false,
+      reason: 'clé manquante : TWITTER_BEARER_TOKEN',
+      analysisReady: false,
+      analysisReason: 'collecte désactivée',
+    };
   }
 
   const explicit = String(env.AI_PROVIDER || '')
     .trim()
     .toLowerCase();
-
-  if (explicit === 'mock') {
-    return { ready: false, reason: 'AI_PROVIDER=mock' };
-  }
-
-  // Seule l'API X exige un token ; syndication et profil sont publics.
-  if (source === 'x' && !String(env.TWITTER_BEARER_TOKEN || '').trim()) {
-    missing.push('TWITTER_BEARER_TOKEN');
-  }
-
   const ai = aiService.getStatus(env);
-  if (!ai.configured) {
-    if (explicit === 'opencode') {
-      missing.push('OPENCODE_API_KEY');
-    } else if (explicit === 'anthropic') {
-      missing.push('ANTHROPIC_API_KEY');
+  const analysisReady = ai.configured && ai.provider !== 'mock';
+
+  let analysisReason = null;
+  if (!analysisReady) {
+    if (explicit === 'mock') {
+      analysisReason = 'AI_PROVIDER=mock';
+    } else if (explicit === 'opencode' && !ai.configured) {
+      analysisReason = 'OPENCODE_API_KEY manquante';
+    } else if (explicit === 'anthropic' && !ai.configured) {
+      analysisReason = 'ANTHROPIC_API_KEY manquante';
     } else {
-      missing.push('OPENCODE_API_KEY ou ANTHROPIC_API_KEY');
+      analysisReason = 'aucune clé IA configurée';
     }
   }
 
-  if (missing.length > 0) {
-    return {
-      ready: false,
-      reason: `clés manquantes : ${missing.join(', ')}`,
-    };
-  }
-
-  return { ready: true, reason: null };
+  return {
+    ready: true,
+    reason: null,
+    analysisReady,
+    analysisReason,
+  };
 }
 
-async function processTweetsSqlite(tweets, profile = null) {
+async function processTweetsSqlite(tweets, profile = null, { analysisReady = true } = {}) {
   const repo = require('./db/sqlite');
   repo.initDatabase();
 
@@ -82,10 +94,10 @@ async function processTweetsSqlite(tweets, profile = null) {
   for (const tweet of tweets) {
     try {
       const saved = repo.saveTweet(tweet);
-      if (saved.analyzed) continue;
+      if (saved.analyzed || !analysisReady) continue;
 
       console.log(`[Scheduler] Analyse du tweet ${tweet.id}...`);
-      const analysis = await analyzeTweet(tweet.content);
+      const analysis = await aiService.analyzeTweet(tweet.content, { tweet });
 
       if (!analysis) {
         console.warn(`[Scheduler] Analyse impossible pour ${tweet.id}`);
@@ -102,7 +114,7 @@ async function processTweetsSqlite(tweets, profile = null) {
   }
 }
 
-async function processTweetsPostgres(tweets, profile = null) {
+async function processTweetsPostgres(tweets, profile = null, { analysisReady = true } = {}) {
   const { getPool, saveProfile } = require('./db/postgres');
   const pool = getPool();
 
@@ -113,8 +125,8 @@ async function processTweetsPostgres(tweets, profile = null) {
       await pool.query(
         `
           INSERT INTO tweets
-            (id, content, posted_at, likes, retweets, source, replies, views, media, quoted_tweet, analyzed)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, false)
+            (id, content, posted_at, likes, retweets, source, replies, views, media, quoted_tweet, reply_to, analyzed)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, false)
           ON CONFLICT (id) DO UPDATE SET
             content = EXCLUDED.content,
             posted_at = EXCLUDED.posted_at,
@@ -124,7 +136,8 @@ async function processTweetsPostgres(tweets, profile = null) {
             replies = EXCLUDED.replies,
             views = EXCLUDED.views,
             media = EXCLUDED.media,
-            quoted_tweet = EXCLUDED.quoted_tweet
+            quoted_tweet = EXCLUDED.quoted_tweet,
+            reply_to = EXCLUDED.reply_to
         `,
         [
           String(tweet.id),
@@ -137,6 +150,7 @@ async function processTweetsPostgres(tweets, profile = null) {
           Number(tweet.views) || 0,
           JSON.stringify(Array.isArray(tweet.media) ? tweet.media : []),
           tweet.quoted_tweet ? JSON.stringify(tweet.quoted_tweet) : null,
+          tweet.reply_to ? JSON.stringify(tweet.reply_to) : null,
         ]
       );
 
@@ -145,10 +159,12 @@ async function processTweetsPostgres(tweets, profile = null) {
         [String(tweet.id)]
       );
 
-      if (existing.rows[0] && existing.rows[0].analyzed) continue;
+      if ((existing.rows[0] && existing.rows[0].analyzed) || !analysisReady) {
+        continue;
+      }
 
       console.log(`[Scheduler] Analyse du tweet ${tweet.id}...`);
-      const analysis = await analyzeTweet(tweet.content);
+      const analysis = await aiService.analyzeTweet(tweet.content, { tweet });
 
       if (!analysis) {
         console.warn(`[Scheduler] Analyse impossible pour ${tweet.id}`);
@@ -191,7 +207,22 @@ async function processTweetsPostgres(tweets, profile = null) {
   }
 }
 
-async function processTweets(dbClient) {
+let activeCycle = null;
+
+function processTweets(dbClient) {
+  if (activeCycle) {
+    console.log('[Scheduler] Cycle déjà en cours — appel ignoré');
+    return activeCycle;
+  }
+
+  activeCycle = runCycle(dbClient).finally(() => {
+    activeCycle = null;
+  });
+
+  return activeCycle;
+}
+
+async function runCycle(dbClient) {
   const client = dbClient || resolveDbClient();
   console.log(`[Scheduler] Cycle démarré (${client})`);
 
@@ -199,8 +230,16 @@ async function processTweets(dbClient) {
     const source = getTwitterSource();
     console.log(`[Scheduler] Source de tweets : ${source}`);
 
-    const tweets = await getRecentTweets();
+    const readiness = schedulerReadiness();
+    const fetched = await getRecentTweets();
+    const tweets = await enrichTweets(fetched);
     console.log(`[Scheduler] ${tweets.length} tweet(s) récupéré(s)`);
+
+    if (!readiness.analysisReady) {
+      console.log(
+        `[Scheduler] Analyse IA ignorée (${readiness.analysisReason}) : import seul`
+      );
+    }
 
     const profile =
       source === 'profile' && tweets.length > 0
@@ -208,9 +247,13 @@ async function processTweets(dbClient) {
         : null;
 
     if (client === 'postgres') {
-      await processTweetsPostgres(tweets, profile);
+      await processTweetsPostgres(tweets, profile, {
+        analysisReady: readiness.analysisReady,
+      });
     } else {
-      await processTweetsSqlite(tweets, profile);
+      await processTweetsSqlite(tweets, profile, {
+        analysisReady: readiness.analysisReady,
+      });
     }
 
     console.log('[Scheduler] Cycle terminé');
@@ -255,6 +298,15 @@ async function stopScheduler(task) {
  * Démarre le cron uniquement en production, si les clés existent et si cette
  * instance obtient le bail partagé. Retourne la tâche cron, ou null.
  */
+function shouldRunImmediately(runImmediately, env = process.env) {
+  if (runImmediately) return true;
+
+  const raw = env.CRON_RUN_ON_START;
+  if (raw === undefined || String(raw).trim() === '') return true;
+
+  return String(raw).trim().toLowerCase() === 'true';
+}
+
 async function startScheduler({
   runImmediately = false,
   lockStore = null,
@@ -363,12 +415,12 @@ async function startScheduler({
   task.schedulerTtlMs = lock.ttlMs;
 
   console.log(
-    `[Scheduler] Démarré (DB ${dbClient}, "${schedule}", bail ${lock.ttlMs} ms)`
+    `[Scheduler] Démarré (DB ${dbClient}, "${schedule}", bail ${lock.ttlMs} ms, analyse ${
+      readiness.analysisReady ? 'active' : 'désactivée'
+    })`
   );
 
-  const immediate =
-    runImmediately ||
-    String(process.env.CRON_RUN_ON_START || '').toLowerCase() === 'true';
+  const immediate = shouldRunImmediately(runImmediately);
 
   if (immediate) {
     console.log('[Scheduler] Cycle immédiat demandé');
@@ -385,5 +437,6 @@ module.exports = {
   processTweets,
   schedulerReadiness,
   resolveLockTtl,
+  shouldRunImmediately,
   DEFAULT_CRON,
 };

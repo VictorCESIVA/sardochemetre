@@ -137,6 +137,7 @@ test('GET /api/tweets : pagination, tri et forme plate', async () => {
       'quoted_tweet',
       'reasoning',
       'replies',
+      'reply_to',
       'retweets',
       'source',
       'verdict',
@@ -146,6 +147,7 @@ test('GET /api/tweets : pagination, tri et forme plate', async () => {
     assert.equal(tweet.author, null);
     assert.deepEqual(tweet.media, []);
     assert.equal(tweet.quoted_tweet, null);
+    assert.equal(tweet.reply_to, null);
     assert.equal(tweet.replies, 0);
     assert.equal(tweet.views, 0);
     assert.equal(tweet.analyzed, true);

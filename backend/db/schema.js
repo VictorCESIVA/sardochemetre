@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS tweets (
   views INTEGER NOT NULL DEFAULT 0,
   media TEXT NOT NULL DEFAULT '[]',
   quoted_tweet TEXT,
+  reply_to TEXT,
   source TEXT NOT NULL DEFAULT 'mock',
   analyzed INTEGER NOT NULL DEFAULT 0 CHECK (analyzed IN (0, 1)),
   fetched_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
@@ -102,6 +103,7 @@ function ensureTweetColumns(db) {
     ['views', 'views INTEGER NOT NULL DEFAULT 0'],
     ['media', "media TEXT NOT NULL DEFAULT '[]'"],
     ['quoted_tweet', 'quoted_tweet TEXT'],
+    ['reply_to', 'reply_to TEXT'],
   ];
 
   for (const [column, sql] of migrations) {

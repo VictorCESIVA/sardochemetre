@@ -19,6 +19,7 @@ const TWEET_SELECT = `
     t.views,
     t.media,
     t.quoted_tweet,
+    t.reply_to,
     t.source,
     t.analyzed,
     a.bullshit_score,
@@ -91,6 +92,7 @@ function mapTweet(row, author = null) {
     author: author || null,
     media: parseMedia(row.media),
     quoted_tweet: parseQuotedTweet(row.quoted_tweet),
+    reply_to: parseQuotedTweet(row.reply_to),
     analyzed: Boolean(row.analyzed),
     bullshit_score:
       row.bullshit_score === null || row.bullshit_score === undefined
@@ -214,6 +216,7 @@ function createTweetsRouter() {
             t.views,
             t.media,
             t.quoted_tweet,
+            t.reply_to,
             t.source,
             t.analyzed,
             a.bullshit_score,
@@ -371,6 +374,7 @@ function createTweetsRouter() {
             t.views,
             t.media,
             t.quoted_tweet,
+            t.reply_to,
             t.source,
             t.analyzed,
             a.bullshit_score,
@@ -412,7 +416,14 @@ function createTweetsRouter() {
         });
       }
 
-      const analysis = await analyzeTweet(content);
+      const tweetId =
+        body.tweet_id === undefined || body.tweet_id === null
+          ? ''
+          : String(body.tweet_id).trim();
+      const pool = getPool();
+      const existing = tweetId ? await fetchTweet(pool, tweetId) : null;
+      const analysis = await analyzeTweet(content, { tweet: existing });
+
       if (!analysis) {
         const failure = getAnalysisFailure();
         return res.status(failure.status).json({
@@ -421,18 +432,8 @@ function createTweetsRouter() {
         });
       }
 
-      const tweetId =
-        body.tweet_id === undefined || body.tweet_id === null
-          ? ''
-          : String(body.tweet_id).trim();
-
       if (tweetId) {
-        const pool = getPool();
-        const existing = await pool.query('SELECT id FROM tweets WHERE id = $1', [
-          tweetId,
-        ]);
-
-        if (existing.rows.length > 0) {
+        if (existing) {
           await pool.query(
             `
               INSERT INTO analyses

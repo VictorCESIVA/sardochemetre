@@ -13,6 +13,8 @@ const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 const MAX_PROFILE_TWEETS = 5;
 const PROFILE_CACHE_TTL_MS = 60 * 1000;
+const TWEET_DETAIL_URL = 'https://cdn.syndication.twimg.com/tweet-result';
+const TWEET_DETAIL_CACHE_TTL_MS = 5 * 60 * 1000;
 const VALID_SOURCES = ['mock', 'x', 'syndication', 'profile'];
 const BROWSER_USER_AGENT =
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36';
@@ -21,6 +23,7 @@ let cachedUserId = null;
 let cachedUsername = null;
 let cachedToken = null;
 let profileCache = null;
+const tweetDetailCache = new Map();
 
 function twitterHeaders(token) {
   return { Authorization: `Bearer ${token}` };
@@ -138,8 +141,59 @@ function getMockTweets(limit) {
     }));
 }
 
+function mapXMedia(media, mediaKey) {
+  const info = media.original_info || {};
+  const width = Number(media.width || info.width) || 0;
+  const height = Number(media.height || info.height) || 0;
+  const url = media.url || media.preview_image_url || '';
+
+  if (!url) return null;
+
+  return {
+    type: String(media.type || 'photo'),
+    url: String(url),
+    width,
+    height,
+    expanded_url: String(media.expanded_url || ''),
+    alt: String(media.alt_text || ''),
+    media_key: String(mediaKey || media.media_key || ''),
+  };
+}
+
+function mapXAuthor(user) {
+  if (!user) return null;
+
+  return {
+    name: String(user.name || '').trim(),
+    username: String(user.username || '').trim(),
+    avatar_url: normalizeAvatarUrl(user.profile_image_url),
+    verified: Boolean(user.verified),
+  };
+}
+
+function mapXReferencedTweet(tweet, usersById, mediaByKey) {
+  if (!tweet) return null;
+
+  const author = mapXAuthor(usersById.get(String(tweet.author_id || '')));
+  const mediaKeys = tweet.attachments && tweet.attachments.media_keys;
+  const media = Array.isArray(mediaKeys)
+    ? mediaKeys
+        .map((key) => mapXMedia(mediaByKey.get(String(key)) || {}, key))
+        .filter(Boolean)
+    : [];
+
+  return {
+    id: String(tweet.id),
+    content: cleanTweetText(tweet.text || ''),
+    posted_at: tweet.created_at || null,
+    author,
+    media,
+  };
+}
+
 /**
- * API X v2 : exclut replies et retweets. Le token reste obligatoire.
+ * API X v2 : inclut les réponses (le tweet parent est résolu ensuite via
+ * `enrichTweets`) et exclut les retweets. Le token reste obligatoire.
  * Une erreur réseau/API renvoie [] pour ne jamais bloquer le scheduler.
  */
 async function getXTweets({ limit, env, userId }) {
@@ -162,8 +216,14 @@ async function getXTweets({ limit, env, userId }) {
         params: {
           // L'API X exige au moins 5 résultats par page.
           max_results: Math.max(5, Math.min(100, limit)),
-          'tweet.fields': 'created_at,public_metrics,referenced_tweets',
-          exclude: 'retweets,replies',
+          'tweet.fields':
+            'created_at,public_metrics,referenced_tweets,attachments,author_id',
+          expansions:
+            'author_id,attachments.media_keys,referenced_tweets.id,referenced_tweets.id.author_id',
+          'media.fields':
+            'url,preview_image_url,type,width,height,alt_text,expanded_url',
+          'user.fields': 'name,username,profile_image_url,verified',
+          exclude: 'retweets',
         },
         timeout: 15000,
       }
@@ -173,27 +233,79 @@ async function getXTweets({ limit, env, userId }) {
       return [];
     }
 
+    const includes = response.data.includes || {};
+    const usersById = new Map(
+      (includes.users || []).map((user) => [String(user.id), user])
+    );
+    const mediaByKey = new Map(
+      (includes.media || []).map((media) => [String(media.media_key), media])
+    );
+    const referencedById = new Map(
+      (includes.tweets || []).map((tweet) => [String(tweet.id), tweet])
+    );
+
     return response.data.data
       .filter((tweet) => {
         const references = Array.isArray(tweet.referenced_tweets)
           ? tweet.referenced_tweets
           : [];
-        return !references.some(
-          (reference) =>
-            reference.type === 'replied_to' || reference.type === 'retweeted'
-        );
+        return !references.some((reference) => reference.type === 'retweeted');
       })
       .slice(0, limit)
-      .map((tweet) => ({
-        id: String(tweet.id),
-        content: tweet.text,
-        posted_at: tweet.created_at,
-        likes:
-          Number(tweet.public_metrics && tweet.public_metrics.like_count) || 0,
-        retweets:
-          Number(tweet.public_metrics && tweet.public_metrics.retweet_count) || 0,
-        source: 'x',
-      }));
+      .map((tweet) => {
+        const references = Array.isArray(tweet.referenced_tweets)
+          ? tweet.referenced_tweets
+          : [];
+        const replyReference = references.find(
+          (reference) => reference.type === 'replied_to'
+        );
+        const quoteReference = references.find(
+          (reference) => reference.type === 'quoted'
+        );
+        const mediaKeys = tweet.attachments && tweet.attachments.media_keys;
+        const media = Array.isArray(mediaKeys)
+          ? mediaKeys
+              .map((key) => mapXMedia(mediaByKey.get(String(key)) || {}, key))
+              .filter(Boolean)
+          : [];
+        const replyTo = replyReference
+          ? mapXReferencedTweet(
+              referencedById.get(String(replyReference.id)),
+              usersById,
+              mediaByKey
+            )
+          : null;
+        const quotedTweet = quoteReference
+          ? mapXReferencedTweet(
+              referencedById.get(String(quoteReference.id)),
+              usersById,
+              mediaByKey
+            )
+          : null;
+
+        return {
+          id: String(tweet.id),
+          content: cleanTweetText(tweet.text || ''),
+          posted_at: tweet.created_at,
+          likes:
+            Number(tweet.public_metrics && tweet.public_metrics.like_count) || 0,
+          retweets:
+            Number(tweet.public_metrics && tweet.public_metrics.retweet_count) ||
+            0,
+          replies:
+            Number(tweet.public_metrics && tweet.public_metrics.reply_count) || 0,
+          views:
+            Number(tweet.public_metrics && tweet.public_metrics.impression_count) ||
+            0,
+          source: 'x',
+          author: mapXAuthor(
+            usersById.get(String(tweet.author_id || resolvedUserId))
+          ),
+          media,
+          quoted_tweet: quotedTweet,
+          reply_to: replyTo,
+        };
+      });
   } catch (error) {
     console.error(`[Twitter] Échec de l'API X : ${formatApiError(error)}`);
     return [];
@@ -440,6 +552,7 @@ function mapProfileMedia(entities) {
         width: Number(info.width) || 0,
         height: Number(info.height) || 0,
         expanded_url: String(media.expanded_url || ''),
+        alt: String(media.ext_alt_text || media.alt_text || ''),
       };
     })
     .filter((media) => media.url);
@@ -688,6 +801,202 @@ async function getProfileSnapshot(options = {}) {
   return profile;
 }
 
+function tweetDetailToken(id) {
+  const numeric = Number(id);
+  if (!Number.isFinite(numeric) || numeric <= 0) return '';
+  return ((numeric / 1e15) * Math.PI)
+    .toString(36)
+    .replace(/0+$/, '');
+}
+
+function mapSyndicationMedia(items) {
+  if (!Array.isArray(items)) return [];
+
+  return items
+    .map((media) => {
+      const info = media.original_info || {};
+      const large = (media.sizes && media.sizes.large) || {};
+      const width = Number(info.width || media.width || large.w) || 0;
+      const height = Number(info.height || media.height || large.h) || 0;
+      const url = String(
+        media.media_url_https || media.media_url || media.url || ''
+      ).trim();
+
+      if (!url) return null;
+
+      return {
+        type: String(media.type || 'photo'),
+        url,
+        width,
+        height,
+        expanded_url: String(media.expanded_url || ''),
+        alt: String(media.ext_alt_text || media.alt_text || ''),
+      };
+    })
+    .filter(Boolean);
+}
+
+function mapSyndicationAuthor(user) {
+  if (!user) return null;
+
+  const name = String(user.name || '').trim();
+  const username = String(user.screen_name || user.username || '').trim();
+  if (!name && !username) return null;
+
+  return {
+    name,
+    username,
+    avatar_url: normalizeAvatarUrl(user.profile_image_url_https),
+    verified: Boolean(
+      user.is_blue_verified !== undefined
+        ? user.is_blue_verified
+        : user.verified
+    ),
+  };
+}
+
+/**
+ * Normalise un tweet du flux `cdn.syndication.twimg.com/tweet-result`.
+ * Ce flux contient `parent` pour une réponse, `quoted_tweet` et les médias.
+ */
+function parseTweetDetail(data) {
+  if (!data || typeof data !== 'object') return null;
+
+  const id = String(data.id_str || data.id || '').trim();
+  if (!id) return null;
+
+  const content = cleanProfileText(data.text || data.full_text || '');
+  const media = mapSyndicationMedia(
+    data.mediaDetails || data.media_entities2 || data.photos || []
+  );
+  const quotedTweet = parseTweetDetail(data.quoted_tweet);
+  const replyTo = parseTweetDetail(data.parent);
+
+  return {
+    id,
+    content,
+    posted_at: profileDateToIso(data.created_at),
+    likes: Number(data.favorite_count) || 0,
+    retweets: Number(data.retweet_count) || 0,
+    replies: Number(data.reply_count || data.conversation_count) || 0,
+    views: Number(data.view_count || (data.views && data.views.count)) || 0,
+    author: mapSyndicationAuthor(data.user),
+    media,
+    quoted_tweet: quotedTweet,
+    reply_to: replyTo,
+    in_reply_to_id: String(data.in_reply_to_status_id_str || '').trim() || null,
+  };
+}
+
+/**
+ * Détail public d'un tweet (parent, citation, médias) sans token.
+ * Cache mémoire de 5 min ; une erreur renvoie null.
+ */
+async function fetchTweetDetail(
+  tweetId,
+  { env = process.env, force = false } = {}
+) {
+  const id = String(tweetId || '').trim();
+  if (!id) return null;
+
+  const cached = tweetDetailCache.get(id);
+  if (
+    !force &&
+    cached &&
+    Date.now() - cached.cachedAt < TWEET_DETAIL_CACHE_TTL_MS
+  ) {
+    return cached.data;
+  }
+
+  const baseUrl =
+    String(env.TWITTER_TWEET_DETAIL_URL || '').trim() || TWEET_DETAIL_URL;
+  const url = `${baseUrl}?id=${encodeURIComponent(id)}&lang=fr&token=${encodeURIComponent(
+    tweetDetailToken(id)
+  )}`;
+
+  try {
+    const response = await axios.get(url, {
+      headers: {
+        'User-Agent': BROWSER_USER_AGENT,
+        Accept: 'application/json',
+      },
+      timeout: 15000,
+    });
+    const data = parseTweetDetail(response.data);
+    tweetDetailCache.set(id, { cachedAt: Date.now(), data });
+    return data;
+  } catch (error) {
+    if (error && error.response && error.response.status === 404) {
+      tweetDetailCache.set(id, { cachedAt: Date.now(), data: null });
+      return null;
+    }
+    console.error(
+      `[Twitter] Détail du tweet ${id} indisponible : ${formatApiError(error)}`
+    );
+    return null;
+  }
+}
+
+function mergeTweetDetail(tweet, detail) {
+  if (!detail) return tweet;
+
+  return {
+    ...tweet,
+    content: tweet.content || detail.content || '',
+    posted_at: tweet.posted_at || detail.posted_at || null,
+    likes: Number(tweet.likes) || detail.likes || 0,
+    retweets: Number(tweet.retweets) || detail.retweets || 0,
+    replies: Number(tweet.replies) || detail.replies || 0,
+    views: Number(tweet.views) || detail.views || 0,
+    author: tweet.author || detail.author || null,
+    media:
+      Array.isArray(detail.media) && detail.media.length > 0
+        ? detail.media
+        : Array.isArray(tweet.media)
+          ? tweet.media
+          : [],
+    quoted_tweet: detail.quoted_tweet || tweet.quoted_tweet || null,
+    reply_to: detail.reply_to || tweet.reply_to || null,
+  };
+}
+
+/**
+ * Enrichit les tweets avec le détail public : tweet parent d'une réponse,
+ * citation et médias complets. Une erreur sur un tweet ne bloque pas les autres.
+ */
+async function enrichTweets(tweets, { env = process.env, fetchDetail = fetchTweetDetail } = {}) {
+  const enriched = [];
+
+  for (const tweet of Array.isArray(tweets) ? tweets : []) {
+    if (!tweet || !tweet.id || tweet.source === 'mock') {
+      enriched.push(tweet);
+      continue;
+    }
+
+    try {
+      const detail = await fetchDetail(tweet.id, { env });
+      if (!detail) {
+        enriched.push(tweet);
+        continue;
+      }
+
+      let replyTo = detail.reply_to;
+      if (!replyTo && detail.in_reply_to_id) {
+        replyTo = await fetchDetail(detail.in_reply_to_id, { env });
+      }
+
+      enriched.push(mergeTweetDetail(tweet, { ...detail, reply_to: replyTo }));
+    } catch (error) {
+      console.error(
+        `[Twitter] Enrichissement impossible pour ${tweet.id} : ${error.message}`
+      );
+      enriched.push(tweet);
+    }
+  }
+
+  return enriched;
+}
+
 /**
  * Récupère les tweets récents de Sardoche.
  * - mock : données de démo, dates recalées.
@@ -727,7 +1036,14 @@ module.exports = {
   getRecentTweets,
   getTwitterSource,
   getProfileSnapshot,
+  getTweetDetail: fetchTweetDetail,
+  enrichTweets,
+  parseTweetDetail,
+  mergeTweetDetail,
   clearProfileCache,
+  clearTweetDetailCache() {
+    tweetDetailCache.clear();
+  },
   resolveUserId,
   parseSyndicationHtml,
   parseProfileHtml,

@@ -82,6 +82,7 @@ test('parseProfileHtml : profil, tweets, médias et citation', () => {
       width: 1303,
       height: 732,
       expanded_url: 'https://x.com/Sardoche/status/9001/photo/1',
+      alt: '',
     },
   ]);
   assert.equal(first.quoted_tweet, null);
@@ -105,6 +106,7 @@ test('parseProfileHtml : profil, tweets, médias et citation', () => {
       width: 1254,
       height: 1254,
       expanded_url: 'https://x.com/grm_off/status/8001/photo/1',
+      alt: '',
     },
   ]);
 });

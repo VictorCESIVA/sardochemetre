@@ -281,3 +281,131 @@ test('analyzeTweet : réponse JSON malformée, retour null', async () => {
     await closeServer(server);
   }
 });
+
+test('analyzeTweet : envoie les images et le contexte au modèle', async () => {
+  const requests = [];
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+    'base64'
+  );
+
+  const { server, baseUrl } = await startServer(async (req, res) => {
+    if (req.url === '/image.png') {
+      res.writeHead(200, { 'content-type': 'image/png' });
+      res.end(png);
+      return;
+    }
+
+    const raw = await readBody(req);
+    requests.push(JSON.parse(raw));
+
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(
+      JSON.stringify({
+        choices: [{ message: { content: JSON.stringify(ANALYSIS) } }],
+      })
+    );
+  });
+
+  try {
+    const env = {
+      OPENCODE_API_KEY: 'oc_sk_test_vision',
+      OPENCODE_BASE_URL: baseUrl,
+    };
+    const tweet = {
+      content: 'Regarde cette capture',
+      reply_to: {
+        content: 'Le tweet de base',
+        author: { name: 'Sardoche', username: 'Sardoche' },
+        media: [],
+      },
+      quoted_tweet: {
+        content: 'La citation',
+        author: { name: 'GRM', username: 'grm_off' },
+        media: [],
+      },
+      media: [
+        {
+          type: 'photo',
+          url: `${baseUrl}/image.png`,
+          alt: 'Une capture de sondage',
+        },
+      ],
+    };
+
+    const analysis = await opencodeService.analyzeTweet(tweet.content, {
+      env,
+      tweet,
+    });
+
+    assert.deepEqual(analysis, ANALYSIS);
+    assert.equal(requests.length, 1);
+
+    const content = requests[0].messages[1].content;
+    assert.ok(Array.isArray(content));
+    assert.equal(content.length, 2);
+    assert.match(content[0].text, /Tweet auquel ce tweet répond/);
+    assert.match(content[0].text, /Le tweet de base/);
+    assert.match(content[0].text, /Tweet cité/);
+    assert.match(content[0].text, /La citation/);
+    assert.match(content[0].text, /Une capture de sondage/);
+    assert.equal(content[1].type, 'image_url');
+    assert.match(content[1].image_url.url, /^data:image\/png;base64,/);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('analyzeTweet : repli texte si le provider refuse les images', async () => {
+  const requests = [];
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+    'base64'
+  );
+
+  const { server, baseUrl } = await startServer(async (req, res) => {
+    if (req.url === '/image.png') {
+      res.writeHead(200, { 'content-type': 'image/png' });
+      res.end(png);
+      return;
+    }
+
+    const body = JSON.parse(await readBody(req));
+    requests.push(body);
+    const hasImage = Array.isArray(body.messages[1].content);
+
+    if (hasImage) {
+      res.writeHead(400, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'image input unsupported' } }));
+      return;
+    }
+
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(
+      JSON.stringify({
+        choices: [{ message: { content: JSON.stringify(ANALYSIS) } }],
+      })
+    );
+  });
+
+  try {
+    const analysis = await opencodeService.analyzeTweet('Un tweet illustré', {
+      env: {
+        OPENCODE_API_KEY: 'oc_sk_test_vision_fallback',
+        OPENCODE_BASE_URL: baseUrl,
+      },
+      tweet: {
+        content: 'Un tweet illustré',
+        media: [{ type: 'photo', url: `${baseUrl}/image.png` }],
+      },
+    });
+
+    assert.deepEqual(analysis, ANALYSIS);
+    assert.equal(requests.length, 2);
+    assert.ok(Array.isArray(requests[0].messages[1].content));
+    assert.equal(typeof requests[1].messages[1].content, 'string');
+    assert.doesNotMatch(requests[1].messages[1].content, /Des images sont jointes/);
+  } finally {
+    await closeServer(server);
+  }
+});

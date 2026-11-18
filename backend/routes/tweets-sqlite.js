@@ -95,7 +95,13 @@ function createTweetsRouter() {
         });
       }
 
-      const analysis = await analyzeTweet(content);
+      const tweetId =
+        body.tweet_id === undefined || body.tweet_id === null
+          ? ''
+          : String(body.tweet_id).trim();
+      const existing = tweetId ? repo.getTweetById(tweetId) : null;
+      const analysis = await analyzeTweet(content, { tweet: existing });
+
       if (!analysis) {
         const failure = getAnalysisFailure();
         return res.status(failure.status).json({
@@ -104,17 +110,9 @@ function createTweetsRouter() {
         });
       }
 
-      const tweetId =
-        body.tweet_id === undefined || body.tweet_id === null
-          ? ''
-          : String(body.tweet_id).trim();
-
-      if (tweetId) {
-        const existing = repo.getTweetById(tweetId);
-        if (existing) {
-          const tweet = repo.upsertAnalysis(tweetId, analysis);
-          return res.json({ tweet });
-        }
+      if (existing) {
+        const tweet = repo.upsertAnalysis(tweetId, analysis);
+        return res.json({ tweet });
       }
 
       res.json({ analysis });

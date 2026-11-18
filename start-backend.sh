@@ -49,9 +49,9 @@ fi
 
 info "Démarrage sur http://localhost:${PORT}"
 info "Source de tweets : TWITTER_SOURCE (profile par défaut dans backend/.env)."
-info "Scheduler : CRON_SCHEDULE=*/5 * * * * si DEMO_MODE=false et clé IA présente."
+info "Scheduler : CRON_SCHEDULE=*/5 * * * * si DEMO_MODE=false (import seul sans clé IA)."
 info "IA : OpenCode / deepseek-v4.1-flash via OPENCODE_API_KEY."
-info "Sans clé, les tweets déjà analysés restent consultables."
+info "Sans clé, l'import continue et les tweets restent non analysés."
 info "Ctrl+C pour arrêter."
 info ""
 
