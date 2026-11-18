@@ -150,7 +150,8 @@ Le comportement attendu est le suivant :
 - le backend démarre normalement ;
 - `GET /api/ai/status` signale que l'IA n'est pas configurée ;
 - `POST /api/ai/analyze` répond `503` ;
-- le scheduler ne démarre pas (`clés manquantes : OPENCODE_API_KEY`) ;
+- le scheduler continue en import seul : les tweets sont collectés mais restent
+  non analysés (`Analyse IA ignorée`) ;
 - l'interface affiche un avertissement ;
 - les tweets déjà collectés et analysés restent consultables ;
 - le bouton de réanalyse est masqué.
@@ -213,10 +214,11 @@ renseignez, indiquez une URL de base complète et redémarrez le backend.
 ### L'interface affiche un avertissement mais les tweets restent visibles
 
 C'est le comportement prévu sans clé. Les analyses déjà en base restent consultables.
-Configurez OpenCode pour activer la collecte et la réanalyse.
+Configurez OpenCode pour activer les analyses et la réanalyse ; la collecte, elle,
+continue sans clé.
 
 ### Les analyses sont lentes
 
-Un appel IA peut prendre plusieurs secondes. Vérifiez la latence réseau et la
-disponibilité du modèle. L'interface affiche un état de chargement pendant la
+Un appel IA peut prendre plusieurs secondes, et jusqu'à une minute lorsqu'une image
+doit être lue. Vérifiez la latence réseau et la disponibilité du modèle. L'interface affiche un état de chargement pendant la
 réanalyse.

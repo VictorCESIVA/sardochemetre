@@ -29,7 +29,7 @@ par IA.
 | --- |
 | ![Détail d'un tweet sur mobile](docs/screenshots/detail-mobile.png) |
 
-Les captures ont été prises le 6 novembre 2026. Les tweets affichés sont de **vrais
+Les captures ont été prises le 13 novembre 2026. Les tweets affichés sont de **vrais
 tweets de @Sardoche du 5 novembre 2026**, pas des données de test. Le détail
 de l'inventaire se trouve dans [`docs/screenshots/README.md`](docs/screenshots/README.md).
 
@@ -37,11 +37,14 @@ de l'inventaire se trouve dans [`docs/screenshots/README.md`](docs/screenshots/R
 
 - **Vrais tweets récents** : la source `profile` lit la page publique `x.com/Sardoche`
   et récupère jusqu'à 5 tweets originaux récents, avec le profil, les médias, les
-  tweets cités et les compteurs.
+  tweets cités et les compteurs. Chaque tweet est enrichi via le détail public X :
+  le tweet parent d'une réponse, la citation et les médias complets sont récupérés
+  automatiquement.
 - **Collecte automatique** : un scheduler tourne toutes les 5 minutes
   (`CRON_SCHEDULE=*/5 * * * *`), protégé par un bail partagé qui réserve le cron à
-  une seule instance ; il enregistre les nouveaux tweets et analyse les nouveaux
-  venus avec OpenCode. Les tweets déjà collectés restent en base.
+  une seule instance. Il importe les nouveaux tweets même sans clé IA ; quand une
+  clé est configurée, il les analyse aussi avec OpenCode. Un cycle immédiat est
+  lancé au démarrage (`CRON_RUN_ON_START=true` par défaut).
 - **Embeds X complets** : avatar, nom, badge vérifié bleu, `@handle`, date, texte,
   photos et vidéos, tweet cité, réponses, reposts, j'aime, vues et lien
   « Voir sur X ».
@@ -54,8 +57,8 @@ de l'inventaire se trouve dans [`docs/screenshots/README.md`](docs/screenshots/R
   et état de l'IA à droite), analyse, fact-checks et pull quote en pleine largeur.
 - **Réanalyse IA** : un bouton permet de relancer l'analyse d'un tweet avec
   DeepSeek V4.1 Flash ; le résultat est persisté.
-- **Design éditorial** : fond papier, titres Fraunces, texte Inter, données IBM Plex
-  Mono et accent vermillon.
+- **Interface sombre et responsive** : titres Archivo Black, texte Space Grotesk,
+  données IBM Plex Mono, accent vert acide, tableau de bord et archives en cartes.
 - **404 et états d'erreur** : page inconnue, tweet introuvable, backend indisponible,
   nouvelle tentative, interface responsive et navigation clavier.
 
@@ -87,8 +90,10 @@ un flux `profile_user_originals_timeline`. À la date de rédaction, elle expose
 6. renvoie au maximum 5 tweets, triés du plus récent au plus ancien.
 
 Un cache mémoire de 60 secondes évite de télécharger la page à chaque requête. Le
-scheduler, lui, tourne toutes les 5 minutes, enregistre les tweets dans les tables
-`tweets` et `profile`, puis analyse uniquement ceux qui ne le sont pas encore. Les
+scheduler, lui, tourne toutes les 5 minutes, enrichit chaque tweet avec son détail
+public (parent d'une réponse, citation, médias), l'enregistre dans les tables `tweets`
+et `profile`, puis analyse uniquement ceux qui ne le sont pas encore lorsque l'IA est
+configurée. Sans clé IA, l'import continue et les analyses restent en attente. Les
 anciens tweets ne sont pas supprimés : la base constitue une archive au fil du temps.
 
 > **Limite importante** : le parsing du HTML de x.com est **non officiel**. X peut
@@ -109,9 +114,9 @@ principale.
 
 Avec `TWITTER_SOURCE=x` et `TWITTER_BEARER_TOKEN`, le backend utilise l'API X v2,
 résout l'utilisateur par `SARDOCHE_USER_ID` ou `SARDOCHE_USERNAME`, exclut les
-réponses et retweets, et récupère jusqu'à `TWITTER_SYNC_LIMIT` tweets. C'est la source
-la plus fiable à long terme, mais elle nécessite un accès API et consomme le quota de
-votre offre.
+retweets, inclut les réponses et récupère jusqu'à `TWITTER_SYNC_LIMIT` tweets avec
+leurs médias, citations et tweets parents. C'est la source la plus fiable à long
+terme, mais elle nécessite un accès API et consomme le quota de votre offre.
 
 ### `mock`
 
@@ -149,10 +154,9 @@ OPENCODE_MODEL=deepseek-v4.1-flash
 ```
 
 L'application démarre donc avec les **vrais tweets récents de Sardoche**. Le
-scheduler vérifie la source toutes les 5 minutes et analyse les nouveaux tweets avec
-OpenCode. La clé `OPENCODE_API_KEY` doit être présente dans `backend/.env` ; sans
-elle, l'application reste consultable mais le scheduler ne démarre pas et la
-réanalyse est désactivée.
+scheduler vérifie la source toutes les 5 minutes, importe les nouveaux tweets et les
+analyse avec OpenCode quand `OPENCODE_API_KEY` est présente dans `backend/.env`. Sans
+clé, la collecte continue en mode import seul et la réanalyse est désactivée.
 
 ### Alias historique
 
@@ -209,7 +213,7 @@ Variables principales :
 | `TWITTER_SOURCE` | `profile` | `profile`, `syndication`, `x` ou `mock`. |
 | `TWITTER_SYNC_LIMIT` | `5` | Tweets récupérés par cycle (la source `profile` plafonne à 5). |
 | `CRON_SCHEDULE` | `*/5 * * * *` | Fréquence du scheduler. |
-| `CRON_RUN_ON_START` | `false` | Lance un cycle immédiat au démarrage. |
+| `CRON_RUN_ON_START` | `true` | Lance un cycle immédiat au démarrage ; `false` attend le premier créneau. |
 | `SCHEDULER_LOCK_TTL_MS` | `900000` | Durée du bail scheduler, renouvelé toutes les TTL/3. Une seule instance exécute le cron. |
 | `AI_PROVIDER` | `opencode` | Provider d'analyse. |
 | `OPENCODE_API_KEY` | `oc_sk_...` | Clé OpenCode, uniquement côté backend. |
@@ -278,9 +282,11 @@ cd frontend && npm run build
 ./test-install.sh
 ```
 
-État actuel de la suite : **106 tests backend** et **41 tests frontend**, lint et
-build sans erreur, et aucune vulnérabilité signalée par `npm audit` au moment de la
-rédaction.
+État actuel de la suite : **115 tests backend** et **41 tests frontend**, lint et
+build sans erreur. Le backend est propre côté `npm audit` ; le frontend signale
+le ReDoS picomatch (CVE-2026-112366) dans les devDependencies vite/vitest :
+aucune version corrigée n'est publiée à ce jour et le bundle de production
+n'embarque pas picomatch (outils de développement uniquement).
 
 `./test-backend.sh` lance les tests backend, puis des smoke tests dynamiques si un
 serveur répond déjà sur `http://localhost:3001` : premier tweet de la liste, détail de
@@ -347,7 +353,7 @@ JSON ; les erreurs utilisent la forme `{ "error": "..." }`.
 | `GET` | `/api/tweets/bullshitmetre?period=` | `{period, globalScore, level, sampleSize, timestamp}`. Niveaux : `FAIBLE` (< 25), `MODÉRÉ` (< 50), `ÉLEVÉ` (< 75), `CRITIQUE` (≥ 75). |
 | `GET` | `/api/tweets/search?q=` | `{tweets, total}` — recherche simple sur le contenu. |
 | `GET` | `/api/tweets/:id` | `{tweet}` ou `404` avec `{error}`. |
-| `POST` | `/api/tweets/analyze` | Corps `{content, tweet_id?}`. `content` est obligatoire et limité à 1000 caractères. Retourne `{tweet}` si `tweet_id` existe et est en base, sinon `{analysis}`. `401` si `ANALYZE_API_KEY` est définie et absente/invalide, `503` sans provider IA configuré. |
+| `POST` | `/api/tweets/analyze` | Corps `{content, tweet_id?}`. `content` est obligatoire et limité à 1000 caractères. Si `tweet_id` existe en base, son contexte (parent, citation, images) est envoyé au modèle et le tweet analysé est retourné ; sinon `{analysis}`. `401` si `ANALYZE_API_KEY` est définie et absente/invalide, `503` sans provider IA configuré. |
 | `GET` | `/api/ai/status` | Provider, modèle, offre et état de configuration. Ne renvoie jamais la clé. |
 | `POST` | `/api/ai/analyze` | Analyse un contenu via OpenCode. Répond `401` si `ANALYZE_API_KEY` est définie et absente/invalide, `503` si la clé manque, `502` si le provider échoue et `429` au-delà de la limite de débit. |
 
@@ -370,6 +376,17 @@ Forme d'un tweet (plate) :
     "verified": true
   },
   "media": [],
+  "reply_to": {
+    "id": "2118334000000000000",
+    "content": "…",
+    "author": {
+      "name": "Sardoche 🇫🇷",
+      "username": "Sardoche",
+      "avatar_url": "https://pbs.twimg.com/…",
+      "verified": true
+    },
+    "media": []
+  },
   "quoted_tweet": {
     "id": "2118335170784985252",
     "content": "…",
@@ -400,8 +417,11 @@ Forme d'un tweet (plate) :
 ```
 
 `media` est un tableau (0 à 4 éléments affichés) ; `quoted_tweet` vaut `null` quand le
-tweet ne cite personne. `author` peut être `null` sur d'anciennes lignes, auquel cas
-le frontend retombe sur le profil global.
+tweet ne cite personne et `reply_to` vaut `null` quand ce n'est pas une réponse.
+`author` peut être `null` sur d'anciennes lignes, auquel cas le frontend retombe sur
+le profil global. Les images `photo` du tweet, de la citation et du parent sont
+téléchargées puis envoyées au modèle de vision ; le prompt inclut aussi le texte du
+parent et de la citation.
 
 ## Déploiement
 

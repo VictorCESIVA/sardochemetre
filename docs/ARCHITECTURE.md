@@ -103,13 +103,24 @@ Champs extraits :
 - profil : `name`, `username`, `avatar_url`, `verified`, `followers` ;
 - tweet : `id`, `content`, `posted_at`, `likes`, `retweets`, `replies`, `views`,
   `source='profile'`, `author` ;
-- médias : `type`, `url`, `width`, `height`, `expanded_url` ;
-- tweet cité : `id`, `content`, `author`, `media`.
+- médias : `type`, `url`, `width`, `height`, `expanded_url`, `alt` ;
+- tweet cité : `id`, `content`, `author`, `media` ;
+- tweet parent : même forme que le tweet cité, dans `reply_to`.
 
 Le parseur plafonne à **5 tweets** (`MAX_PROFILE_TWEETS`). Un cache mémoire de
 60 secondes (`PROFILE_CACHE_TTL_MS`) évite de télécharger la page à chaque cycle ou
 requête rapprochée. En cas d'échec réseau ou de parsing, il journalise l'erreur et
 renvoie `{ profile: null, tweets: [] }` sans faire tomber le processus.
+
+Chaque tweet est ensuite enrichi par `enrichTweets()` via
+`https://cdn.syndication.twimg.com/tweet-result` (cache 5 minutes) :
+
+- `parent` devient `reply_to` pour une réponse ;
+- `quoted_tweet` complète la citation ;
+- `mediaDetails` complète les médias et leur texte alternatif.
+
+L'enrichissement est tolérant : un détail indisponible laisse le tweet d'origine
+intact et ne bloque pas le cycle.
 
 Le parsing du HTML de x.com est **non officiel** : une modification de la page, un
 rate limit ou une protection Cloudflare peut vider la collecte. L'API X v2 officielle
@@ -121,14 +132,16 @@ reste la voie la plus robuste.
 un HTML contenant `__NEXT_DATA__`. Le parseur `parseSyndicationHtml` filtre les
 réponses et retweets, déduplique, nettoie le texte et trie par date. Cette source ne
 demande pas de token mais expose souvent une archive plus ancienne et moins de détails
-d'embed.
+d'embed. Le endpoint `tweet-result` du même domaine sert à enrichir chaque tweet
+(parent, citation, médias).
 
 ### `x` : API X v2
 
 Avec un Bearer Token, le backend résout l'utilisateur par `SARDOCHE_USER_ID` ou
-`SARDOCHE_USERNAME`, puis appelle `/2/users/:id/tweets` avec
-`exclude=retweets,replies`. Les tweets retournés contiennent les métriques publiques
-et la date. C'est la source officielle, soumise aux quotas X.
+`SARDOCHE_USERNAME`, puis appelle `/2/users/:id/tweets` avec `exclude=retweets` et
+les expansions `author_id`, `attachments.media_keys`, `referenced_tweets.id`. Les
+réponses sont incluses avec leur parent, leur citation et leurs médias. C'est la
+source officielle, soumise aux quotas X.
 
 ### `mock` : tests
 
@@ -156,19 +169,24 @@ Conditions de démarrage :
 - `DEMO_MODE` différent de `true` ;
 - source de tweets valide ;
 - `TWITTER_BEARER_TOKEN` présent uniquement si la source est `x` ;
-- provider IA configuré (`OPENCODE_API_KEY` pour OpenCode) ;
 - `CRON_SCHEDULE` valide (défaut `0 * * * *`, configuration du projet
   `*/5 * * * *`).
+
+L'IA n'est plus une condition de démarrage : sans clé, le scheduler importe les
+tweets et journalise `Analyse IA ignorée`. L'analyse reprend au cycle suivant une
+fois la clé configurée.
 
 Un cycle :
 
 1. lit la source (`profile` par défaut) et récupère jusqu'à `TWITTER_SYNC_LIMIT`
    tweets (5 maximum avec `profile`) ;
-2. récupère le snapshot du profil quand la source est `profile` ;
-3. enregistre le profil dans `profile` ;
-4. insère ou met à jour les tweets sans créer de doublon ;
-5. analyse uniquement les tweets dont `analyzed` est faux ;
-6. stocke l'analyse et passe `analyzed` à vrai.
+2. enrichit chaque tweet avec `enrichTweets()` (parent, citation, médias) ;
+3. récupère le snapshot du profil quand la source est `profile` ;
+4. enregistre le profil dans `profile` ;
+5. insère ou met à jour les tweets sans créer de doublon ;
+6. analyse uniquement les tweets dont `analyzed` est faux, si une clé IA est
+   configurée ;
+7. stocke l'analyse et passe `analyzed` à vrai.
 
 Les anciens tweets restent en base : la collecte ne remplace pas l'archive. Un tweet
 déjà analysé n'est pas rappelé à l'IA, ce qui limite le coût. `noOverlap: true`
@@ -196,6 +214,7 @@ tweets
   views         INTEGER
   media         JSONB / TEXT JSON  (tableau)
   quoted_tweet  JSONB / TEXT JSON  (objet ou NULL)
+  reply_to      JSONB / TEXT JSON  (tweet parent ou NULL)
   source        TEXT               (profile, syndication, x, mock)
   analyzed      BOOLEAN / INTEGER
   fetched_at / created_at
@@ -284,7 +303,7 @@ scheduler.
 - `SQLITE_PATH` peut être absolu ou relatif au dossier `backend/`.
 - Schéma créé/mis à jour au démarrage (`db/schema.js`), avec reconstruction de
   l'ancienne table `analyses` si les contraintes manquent et ajout des colonnes
-  `source`, `replies`, `views`, `media`, `quoted_tweet`.
+  `source`, `replies`, `views`, `media`, `quoted_tweet`, `reply_to`.
 - WAL, `busy_timeout = 5000`, clés étrangères activées.
 - Un seul processus backend conseillé.
 
@@ -293,7 +312,8 @@ scheduler.
 - Pool `pg` dans `db/postgres.js`.
 - `DATABASE_URL` obligatoire.
 - Schéma géré par `npm run migrate` (`001_initial_schema.sql`,
-  `002_tweet_source.sql`, `003_profile_embed.sql`).
+  `002_tweet_source.sql`, `003_profile_embed.sql`, `004_scheduler_lease.sql`,
+  `005_reply_context.sql`).
 - Les routes sont asynchrones et utilisent des requêtes paramétrées.
 - Le schéma et les requêtes sont implémentés, mais ce chemin n'a pas été exécuté ici
   contre un serveur PostgreSQL réel.
@@ -344,6 +364,7 @@ Forme de tweet plate :
     }
   ],
   "quoted_tweet": null,
+  "reply_to": null,
   "analyzed": true,
   "bullshit_score": 3,
   "verdict": "VRAI",

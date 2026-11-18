@@ -98,7 +98,7 @@ archive/                 # ancien squelette de projet
 cd backend
 npm start                # serveur
 npm run dev              # serveur avec rechargement
-npm test                 # 106 tests
+npm test                 # 115 tests
 npm run sync             # collecte les tweets de la source configurée
 npm run sync:analyze     # collecte + analyse les nouveaux tweets
 npm run seed             # données mock (tests uniquement)
@@ -164,6 +164,7 @@ Forme de tweet plate :
     }
   ],
   "quoted_tweet": null,
+  "reply_to": null,
   "analyzed": true,
   "bullshit_score": 3,
   "verdict": "VRAI",
@@ -200,11 +201,13 @@ Profil :
   exclus.
 - `mock` : `backend/mock/tweets.json`, dates recalées, réservé aux tests.
 
-Le scheduler démarre si `DEMO_MODE` n'est pas `true`, si la source est valide, si la
-clé IA est présente, si `CRON_SCHEDULE` est valide et si l'instance obtient le bail
-`scheduler_leases`. Il récupère `TWITTER_SYNC_LIMIT` tweets (5 avec `profile`),
-enregistre le profil, upsert les tweets, analyse uniquement les nouveaux et conserve
-les anciens en base. Le bail est renouvelé par heartbeat et libéré à l'arrêt.
+Le scheduler démarre si `DEMO_MODE` n'est pas `true`, si la source est valide, si
+`CRON_SCHEDULE` est valide et si l'instance obtient le bail `scheduler_leases`. Il
+récupère `TWITTER_SYNC_LIMIT` tweets (5 avec `profile`), les enrichit via le détail
+public X (tweet parent d'une réponse, citation, médias), enregistre le profil, upsert
+les tweets et conserve les anciens en base. L'analyse IA est lancée uniquement si une
+clé réelle est configurée ; sans clé, l'import continue. Le bail est renouvelé par
+heartbeat et libéré à l'arrêt. `CRON_RUN_ON_START` vaut `true` par défaut.
 
 ## Variables principales
 
@@ -214,7 +217,7 @@ DB_CLIENT=sqlite
 TWITTER_SOURCE=profile
 TWITTER_SYNC_LIMIT=5
 CRON_SCHEDULE=*/5 * * * *
-CRON_RUN_ON_START=false
+CRON_RUN_ON_START=true
 ANALYZE_RATE_LIMIT=10
 ANALYZE_RATE_WINDOW_MS=60000
 # TRUST_PROXY=1            # derrière Railway/Render
@@ -229,8 +232,9 @@ OPENCODE_PLAN=payg          # ou go
 # OPENCODE_MAX_TOKENS=3000
 ```
 
-Sans clé OpenCode, `POST /api/ai/analyze` répond `503`, le scheduler ne démarre pas
-et le bouton de réanalyse est masqué. Les tweets déjà analysés restent consultables.
+Sans clé OpenCode, `POST /api/ai/analyze` répond `503`, le scheduler continue en
+import seul et le bouton de réanalyse est masqué. Les tweets déjà analysés restent
+consultables.
 
 Les modèles « free » OpenCode ne sont pas utilisables depuis un client externe
 (`403`). Les appels sont facturés selon l'offre ; protéger les routes d'analyse est
@@ -257,6 +261,9 @@ nécessaire.
 - Le scheduler est protégé par un bail (`scheduler_leases`) renouvelé
   périodiquement : une seule instance exécute le cron. Ne pas contourner ce verrou
   ni supprimer la libération à l'arrêt.
+- L'import ne doit pas dépendre de la clé IA : sans clé, les tweets sont collectés et
+  restent non analysés. L'analyse doit utiliser le contexte du tweet (parent,
+  citation) et lire les images jointes.
 - La source `profile` est non officielle : toute évolution du parseur doit rester
   tolérante et testée avec un HTML de référence.
 - Le ton reste satirique, pas harcelant. Pas d'attaque personnelle, pas de doxxing.
@@ -265,10 +272,12 @@ nécessaire.
 
 ## Tests
 
-- Backend : **106 tests** (`node --test test/*.test.js`, `npm test`).
+- Backend : **115 tests** (`node --test test/*.test.js`, `npm test`).
 - Frontend : **41 tests** (`vitest run`, `npm test`).
 - `npm run lint` et `npm run build` passent.
-- `npm audit` ne signale aucune vulnérabilité connue au moment de la rédaction.
+- `npm audit` : backend propre ; le frontend signale le ReDoS picomatch
+  (CVE-2026-112366) via les devDependencies vite/vitest. Aucune version corrigée
+  n'existe à ce jour, et le bundle de production n'embarque pas picomatch.
 - GitHub Actions exécute les tests backend (Node 20 et 24), les tests, le lint et le build frontend sur chaque push et pull request.
 - `./test-install.sh` enchaîne tests, lint et build.
 - `./test-backend.sh` lance les tests puis des smoke tests dynamiques contre le

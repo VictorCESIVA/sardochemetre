@@ -78,7 +78,7 @@ Les fichiers `.env` sont ignorés par Git. Ne versionnez jamais de clé réelle.
 | `SARDOCHE_USERNAME` | `Sardoche` | Compte dont les tweets sont récupérés. |
 | `SARDOCHE_USER_ID` | — | ID numérique du compte pour l'API X ; prioritaire sur le username s'il est fourni. |
 | `CRON_SCHEDULE` | `*/5 * * * *` | Expression cron du scheduler. |
-| `CRON_RUN_ON_START` | `false` | `true` lance un cycle immédiat au démarrage. |
+| `CRON_RUN_ON_START` | `true` | Lance un cycle immédiat au démarrage ; `false` attend le premier créneau. |
 | `SCHEDULER_LOCK_TTL_MS` | `900000` | Durée du bail scheduler, renouvelé toutes les TTL/3. |
 | `AI_PROVIDER` | `opencode` | Provider d'analyse : `opencode` (standard), `anthropic` (historique) ou `mock` (tests). |
 | `OPENCODE_API_KEY` | — | Clé `oc_sk_...` créée sur la console OpenCode. Obligatoire pour l'IA réelle. |
@@ -136,12 +136,13 @@ Vérification :
 curl http://localhost:3001/api/ai/status
 ```
 
-Sans clé, le statut signale une configuration incomplète, le scheduler ne démarre
-pas et les routes POST d'analyse répondent `503 AI_NOT_CONFIGURED`. Les tweets déjà
-analysés restent consultables et le bouton de réanalyse est masqué. Le repli mock
-n'est autorisé qu'en test ou en démo ; en production, aucune analyse simulée n'est
-persistée. Pour restreindre les routes d'analyse à un appelant authentifié, définissez
-`ANALYZE_API_KEY`.
+Sans clé, le statut signale une configuration incomplète et les routes POST
+d'analyse répondent `503 AI_NOT_CONFIGURED`. Le scheduler continue toutefois à
+importer les tweets (mode import seul) ; les analyses restent en attente, les tweets
+déjà analysés restent consultables et le bouton de réanalyse est masqué. Le repli
+mock n'est autorisé qu'en test ou en démo ; en production, aucune analyse simulée
+n'est persistée. Pour restreindre les routes d'analyse à un appelant authentifié,
+définissez `ANALYZE_API_KEY`.
 
 **Payg ou Go.** Le pay-as-you-go est recommandé pour cette application : il est
 prévu pour les appels API classiques et se facture à l'usage. L'offre Go est conçue
@@ -163,7 +164,7 @@ directement.
 | --- | --- | --- | --- |
 | Profil public | `profile` | Non | Page `x.com/Sardoche`, jusqu'à 5 tweets originaux récents, profil, médias, citations, compteurs. |
 | Syndication | `syndication` | Non | Ancien flux public, archive plus ancienne et moins détaillée. |
-| API X v2 | `x` | `TWITTER_BEARER_TOKEN` | Source officielle, quota X, réponses et retweets exclus. |
+| API X v2 | `x` | `TWITTER_BEARER_TOKEN` | Source officielle, quota X, retweets exclus, réponses incluses. |
 | Mock | `mock` | Non | Tweets de test, dates recalées ; réservé aux tests. |
 
 ### Flux `profile`
@@ -182,17 +183,23 @@ x.com/Sardoche (HTML SSR)
 Le parseur récupère le JSON SSR présent dans la page, parcourt les instructions
 `TimelineAddEntries`, écarte les entrées sans date ou sans contenu, déduplique par
 identifiant et trie par date décroissante. Il renvoie au plus 5 tweets. Un cache
-mémoire de 60 secondes évite les téléchargements répétés.
+mémoire de 60 secondes évite les téléchargements répétés. Chaque tweet est ensuite
+enrichi via `cdn.syndication.twimg.com/tweet-result` : le tweet parent d'une réponse,
+la citation et les médias complets sont ajoutés avant l'enregistrement.
 
 Le scheduler :
 
 - démarre si `DEMO_MODE` n'est pas `true`, si la source est valide, si
-  `CRON_SCHEDULE` est valide et si l'IA est configurée ;
+  `CRON_SCHEDULE` est valide et si le bail est disponible ;
 - avec `profile` ou `syndication`, ne demande aucun token X ;
 - avec `x`, exige `TWITTER_BEARER_TOKEN` ;
-- récupère `TWITTER_SYNC_LIMIT` tweets (5 avec `profile`), enregistre le profil,
-  insère ou met à jour les tweets, puis analyse uniquement ceux qui ne le sont pas
-  encore ;
+- importe les tweets même sans clé IA ; l'analyse est simplement ignorée et les
+  tweets restent `analyzed=false` pour un traitement ultérieur ;
+- récupère `TWITTER_SYNC_LIMIT` tweets (5 avec `profile`), les enrichit, enregistre
+  le profil, insère ou met à jour les tweets, puis analyse avec l'IA uniquement ceux
+  qui ne le sont pas encore ;
+- lit les images (`photo`) du tweet, de la citation et du parent, et les envoie au
+  modèle de vision quand il en existe ;
 - conserve les anciens tweets en base ;
 - ne lance pas deux cycles simultanés dans le même processus (`noOverlap`) ;
 - acquiert un bail `scheduler_leases` renouvelé par heartbeat : une seule instance
@@ -208,7 +215,7 @@ DEMO_MODE=false
 TWITTER_SOURCE=profile
 TWITTER_SYNC_LIMIT=5
 CRON_SCHEDULE=*/5 * * * *
-CRON_RUN_ON_START=false
+CRON_RUN_ON_START=true
 ```
 
 En production multi-instance, le bail `scheduler_leases` désigne automatiquement une
@@ -293,9 +300,9 @@ npm run migrate
 La commande crée la table de suivi `schema_migrations` et applique les fichiers
 `migrations/*.sql` dans l'ordre. Elle ne fait rien si `DB_CLIENT=sqlite` (le schéma
 SQLite est automatique). Les migrations `002_tweet_source.sql`,
-`003_profile_embed.sql` et `004_scheduler_lease.sql` ajoutent la source, les
-compteurs d'embed, la table `profile`, le bail scheduler et le compteur de débit
-partagé.
+`003_profile_embed.sql`, `004_scheduler_lease.sql` et `005_reply_context.sql`
+ajoutent la source, les compteurs d'embed, la table `profile`, le bail scheduler,
+le compteur de débit partagé et le contexte de réponse (`reply_to`).
 
 4. Démarrez le backend :
 
@@ -339,7 +346,7 @@ cd frontend && npm run build
 ./test-backend.sh             # tests + smoke tests si le backend tourne
 ```
 
-État attendu : **106 tests backend**, **41 tests frontend**, lint et build sans
+État attendu : **115 tests backend**, **41 tests frontend**, lint et build sans
 erreur. Les smoke tests vérifient le premier tweet réellement présent, son détail, une
 recherche, le profil, les statistiques et le BullshitMètre.
 
@@ -397,8 +404,8 @@ séparez-les par des virgules, sans espaces inutiles.
 - Vérifiez `curl http://localhost:3001/api/profile`.
 - Consultez les logs `[Twitter]` : la page x.com peut être bloquée, vide ou avoir
   changé de structure.
-- Vérifiez que le scheduler a démarré : `DEMO_MODE=false`, clé IA présente,
-  `CRON_SCHEDULE` valide.
+- Vérifiez que le scheduler a démarré : `DEMO_MODE=false`, `CRON_SCHEDULE` valide.
+  L'import fonctionne sans clé IA ; seule l'analyse est alors désactivée.
 - Lancez un cycle manuel : `cd backend && npm run sync:analyze`.
 
 ### `503` sur `/api/ai/analyze`
@@ -429,8 +436,9 @@ SQLite reste mono-écrivain.
 ### Le scheduler ne démarre pas
 
 Consultez les logs `[Scheduler]`. Causes fréquentes : `DEMO_MODE=true`, source
-invalide, `TWITTER_BEARER_TOKEN` manquant avec `TWITTER_SOURCE=x`, provider IA mal
-configuré, `CRON_SCHEDULE` invalide ou `DB_CLIENT` mal configuré.
+invalide, `TWITTER_BEARER_TOKEN` manquant avec `TWITTER_SOURCE=x`, `CRON_SCHEDULE`
+invalide, bail détenu par une autre instance ou `DB_CLIENT` mal configuré. Une clé IA
+absente ne bloque plus l'import : cherchez `Analyse IA ignorée`.
 
 ### La source `profile` échoue
 
@@ -444,5 +452,6 @@ Vérifiez la page dans un navigateur, puis :
 
 ### Les analyses sont lentes
 
-Un appel IA peut prendre plusieurs secondes. Le scheduler analyse les nouveaux tweets
-un par un ; l'interface affiche un état de chargement pendant une réanalyse.
+Un appel IA peut prendre plusieurs secondes, et jusqu'à une minute quand une image
+doit être lue. Le scheduler analyse les nouveaux tweets un par un ; l'interface
+affiche un état de chargement pendant une réanalyse.
