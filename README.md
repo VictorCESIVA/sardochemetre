@@ -68,6 +68,16 @@ de test. Le détail de l'inventaire se trouve dans
   attaque, neutre) et une page dédiée agrège le tout : qui est cité, qui est
   chargé, score de bullshit moyen des tweets en campagne. Fonctionne sans
   clé IA (détection lexicale seule, ton « non tranché »).
+- **Fact-check sourcé en deux passes** : l'IA extrait d'abord les
+  affirmations du tweet, le backend recherche des sources (Tavily si clé,
+  API Wikipédia FR sinon), puis l'IA ré-analyse en citant ces sources. Le
+  détail du tweet affiche les sources consultées avec extraits, et chaque
+  affirmation porte les liens qui l'éclairent. Anti-hallucination : le modèle
+  ne peut citer que des URL fournies par le backend, jamais inventées.
+- **Graphiques** : courbe de l'indice de bullshit dans le temps (par jour,
+  semaine ou mois) avec la série des tweets politiques en pointillés, sur
+  l'accueil et dans le dossier élection — SVG maison, sans dépendance de
+  graphique.
 - **Interface sombre et responsive** : titres Archivo Black, texte Space Grotesk,
   données IBM Plex Mono, accent vert acide, tableau de bord et archives en cartes.
 - **404 et états d'erreur** : page inconnue, tweet introuvable, backend indisponible,
@@ -231,6 +241,8 @@ Variables principales :
 | `OPENCODE_MODEL` | `deepseek-v4.1-flash` | Modèle utilisé. |
 | `OPENCODE_PLAN` | `payg` ou `go` | Offre OpenCode et URL associée. |
 | `OPENCODE_MAX_TOKENS` | `3000` | Limite de génération. |
+| `ANALYZE_WITH_SOURCES` | `true` | Active la recherche de sources et la deuxième passe d'analyse ; `false` repasse en mono-passe. |
+| `TAVILY_API_KEY` | — | Clé optionnelle de recherche web (https://tavily.com). Sans clé, seule l'API Wikipédia FR est consultée. |
 | `SARDOCHE_USERNAME` | `Sardoche` | Compte suivi. |
 | `TWITTER_BEARER_TOKEN` | — | Uniquement avec `TWITTER_SOURCE=x`. |
 
@@ -239,6 +251,11 @@ application. L'offre **Go** est prévue pour les agents de codage ; elle reste
 supportée, avec l'en-tête `x-opencode-session` ajouté par le backend. La configuration
 locale de ce dépôt utilise une clé Go (`OPENCODE_PLAN=go`) ; le compte pay-as-you-go
 n'a pas de crédits. Pour un déploiement public, préférez une clé payg approvisionnée.
+
+L'analyse en deux passes consomme environ **deux appels IA par tweet** (trois si
+la deuxième passe doit être retentée) : avec DeepSeek Flash, le coût reste de
+l'ordre du centième de centime par tweet. La recherche de sources (Wikipédia) est
+gratuite et sans clé.
 
 La clé OpenCode ne doit **jamais** être exposée au frontend. Aucun secret ne doit
 figurer dans une variable `VITE_*`.
@@ -364,6 +381,7 @@ JSON ; les erreurs utilisent la forme `{ "error": "..." }`.
 | `GET` | `/api/tweets/stats?period=` | `{period, avgScore, minScore, maxScore, totalAnalyzed, verdictDistribution}`. |
 | `GET` | `/api/tweets/bullshitmetre?period=` | `{period, globalScore, level, sampleSize, timestamp}`. Niveaux : `FAIBLE` (< 25), `MODÉRÉ` (< 50), `ÉLEVÉ` (< 75), `CRITIQUE` (≥ 75). |
 | `GET` | `/api/tweets/election?period=&limit=10` | Dossier élection : `{period, politicalCount, totalAnalyzed, avgPoliticalScore, mentions, tweets, updatedAt}`. `mentions` agrège les personnalités, partis et institutions cités dans les tweets politiques avec leur ton (`soutien`, `attaque`, `neutre`) et les identifiants des tweets concernés. |
+| `GET` | `/api/tweets/historique?period=&bucket=day\|week\|month` | Courbe de l'indice : `{period, bucket, points: [{date, avgScore, count, politicalCount, avgPoliticalScore}], updatedAt}`. `avgPoliticalScore` vaut `null` quand le bucket ne contient aucun tweet politique. Un bucket inconnu répond `400`. |
 | `GET` | `/api/tweets/search?q=` | `{tweets, total}` — recherche simple sur le contenu. |
 | `GET` | `/api/tweets/:id` | `{tweet}` ou `404` avec `{error}`. |
 | `POST` | `/api/tweets/analyze` | Corps `{content, tweet_id?}`. `content` est obligatoire et limité à 1000 caractères. Si `tweet_id` existe en base, son contexte (parent, citation, images) est envoyé au modèle et le tweet analysé est retourné ; sinon `{analysis}`. `401` si `ANALYZE_API_KEY` est définie et absente/invalide, `503` sans provider IA configuré. |
@@ -424,12 +442,20 @@ Forme d'un tweet (plate) :
   "bullshit_score": 86,
   "verdict": "BULLSHIT",
   "reasoning": "…",
-  "fact_checks": [{ "claim": "…", "verdict": "faux", "note": "…" }],
+  "fact_checks": [{ "claim": "…", "verdict": "faux", "note": "…", "sources": [{ "title": "…", "url": "…" }] }],
   "mentions": [
     {
       "label": "David Lisnard",
       "type": "candidat",
       "stance": "soutien"
+    }
+  ],
+  "sources": [
+    {
+      "title": "Retraite en France",
+      "url": "https://fr.wikipedia.org/wiki/Retraite_en_France",
+      "snippet": "…",
+      "provider": "wikipedia"
     }
   ],
   "humor_comment": "…",
@@ -480,6 +506,15 @@ Le détail est dans [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
   « neutres ». C'est un outil satirique de lecture de flux, pas un observatoire
   électoral officiel. Le dictionnaire est calibré sur la campagne 2027 et doit
   être tenu à jour au fil des candidatures.
+- **Sources de fact-check indicatives** : la deuxième passe consulte Wikipédia
+  FR (et Tavily si une clé est fournie) et le modèle ne peut citer que ces URL —
+  il ne peut pas en inventer. Mais un extrait Wikipédia peut être daté ou
+  incomplet, et Tavily peut ramener un article de presse contesté : une source
+  citée n'est pas une preuve définitive, juste un point de départ. Les analyses
+  antérieures à la fonctionnalité n'affichent aucune source.
+- **IA faillible (rappel)** : le modèle peut se tromper, inventer un fait dans
+  une note ou mal lire une source fournie. Les réponses invalides sont
+  rejetées, pas les erreurs de jugement.
 - **Repli mock limité aux tests/démo** : le service d'analyse ne produit une
   analyse simulée que si `NODE_ENV=test`, `DEMO_MODE=true` ou `AI_PROVIDER=mock`.
   En production, une clé manquante fait répondre `503 AI_NOT_CONFIGURED` et aucune

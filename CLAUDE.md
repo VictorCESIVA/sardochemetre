@@ -29,6 +29,15 @@ analyses ne constituent pas un fact-checking professionnel.
   (`politicsService.js`, dictionnaire calibré sur la présidentielle 2027),
   mentions de personnalités avec ton (soutien/attaque/neutre) produites par
   l'IA, route `GET /api/tweets/election` et page frontend `/election`.
+- **Fact-check sourcé en deux passes** : `sourcesService.js` consulte
+  Wikipédia FR (sans clé) et Tavily (si `TAVILY_API_KEY`), le modèle cite
+  ces sources dans `fact_checks[].sources` et ne peut inventer aucune URL
+  (filtrage `allowedUrls`). Colonne `analyses.sources`, section « Sources
+  consultées » sur la page détail. `ANALYZE_WITH_SOURCES=false` coupe le
+  pipeline. `scripts/regen-analyses.js` régénère les analyses en base.
+- **Courbes** : `GET /api/tweets/historique` agrège le score par
+  jour/semaine/mois avec la série politique ; `TrendChart.jsx` (SVG maison)
+  l'affiche sur l'accueil et dans le dossier élection.
 - **Déploiement** : frontend statique (Vercel/Netlify) + backend
   (Railway/Render) avec SQLite sur disque persistant ou PostgreSQL.
 
@@ -71,11 +80,14 @@ backend/
   services/
     twitterService.js    # sources profile, syndication, x, mock
     opencodeService.js   # appels OpenCode et normalisation
-    aiService.js         # sélection du provider
+    aiService.js         # sélection du provider, orchestration deux passes
     politicsService.js   # détection électorale et mentions (dictionnaire 2027)
+    sourcesService.js    # recherche de sources (Wikipédia FR, Tavily optionnel)
     schedulerLock.js     # bail renouvelable du scheduler
     claudeService.js     # prompt, parsing, provider Anthropic historique
-  migrations/            # migrations PostgreSQL (source, profil, embed, bail, élection)
+  scripts/
+    regen-analyses.js    # régénère toutes les analyses avec le prompt courant
+  migrations/            # migrations PostgreSQL (source, profil, embed, bail, élection, sources)
   mock/tweets.json       # tweets de test
   test/                  # tests node:test
 
@@ -103,7 +115,7 @@ archive/                 # ancien squelette de projet
 cd backend
 npm start                # serveur
 npm run dev              # serveur avec rechargement
-npm test                 # 131 tests
+npm test                 # 150 tests
 npm run sync             # collecte les tweets de la source configurée
 npm run sync:analyze     # collecte + analyse les nouveaux tweets
 npm run seed             # données mock (tests uniquement)
@@ -116,7 +128,7 @@ npm run dev
 npm run build
 npm run preview
 npm run lint
-npm test                 # 48 tests
+npm test                 # 55 tests
 
 # Vérification complète
 ./test-install.sh
@@ -133,6 +145,7 @@ npm test                 # 48 tests
 | GET | `/api/tweets/stats?period=` | `{period, avgScore, minScore, maxScore, totalAnalyzed, verdictDistribution}` |
 | GET | `/api/tweets/bullshitmetre?period=` | `{period, globalScore, level, sampleSize, timestamp}` |
 | GET | `/api/tweets/election?period=&limit=` | `{period, politicalCount, totalAnalyzed, avgPoliticalScore, mentions, tweets, updatedAt}` |
+| GET | `/api/tweets/historique?period=&bucket=day\|week\|month` | `{period, bucket, points: [{date, avgScore, count, politicalCount, avgPoliticalScore}], updatedAt}` ; bucket inconnu → 400 |
 | GET | `/api/tweets/search?q=` | `{tweets, total}` |
 | GET | `/api/tweets/:id` | `{tweet}` ou 404 |
 | POST | `/api/tweets/analyze` | `{tweet}` si `tweet_id` existe, sinon `{analysis}` |
@@ -179,6 +192,9 @@ Forme de tweet plate :
   "fact_checks": [],
   "mentions": [
     { "label": "David Lisnard", "type": "candidat", "stance": "soutien" }
+  ],
+  "sources": [
+    { "title": "Retraite en France", "url": "https://fr.wikipedia.org/wiki/…", "snippet": "…", "provider": "wikipedia" }
   ],
   "humor_comment": "…",
   "analyzed_at": "…"
@@ -230,6 +246,8 @@ CRON_SCHEDULE=*/5 * * * *
 CRON_RUN_ON_START=true
 ANALYZE_RATE_LIMIT=10
 ANALYZE_RATE_WINDOW_MS=60000
+# ANALYZE_WITH_SOURCES=true        # false = analyse mono-passe, sans recherche
+# TAVILY_API_KEY=tvly-...           # recherche web réelle (sinon Wikipédia FR seul)
 # TRUST_PROXY=1            # derrière Railway/Render
 # ANALYZE_API_KEY=...      # protège les routes POST d'analyse (Bearer / x-analyze-key)
 # ANALYZE_RATE_LIMIT_SHARED=true  # compteur partagé entre instances
@@ -288,8 +306,8 @@ nécessaire.
 
 ## Tests
 
-- Backend : **131 tests** (`node --test test/*.test.js`, `npm test`).
-- Frontend : **48 tests** (`vitest run`, `npm test`).
+- Backend : **150 tests** (`node --test test/*.test.js`, `npm test`).
+- Frontend : **55 tests** (`vitest run`, `npm test`).
 - `npm run lint` et `npm run build` passent.
 - `npm audit` : backend propre ; le frontend signale le ReDoS picomatch
   (CVE-2026-112366) via les devDependencies vite/vitest. Aucune version corrigée

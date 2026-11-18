@@ -237,6 +237,7 @@ analyses
   reasoning     TEXT
   fact_checks   JSONB (PostgreSQL) / TEXT JSON (SQLite)
   mentions      JSONB / TEXT JSON  (personnalités citées avec leur ton)
+  sources       JSONB / TEXT JSON  (sources consultées pour le fact-check)
   humor_comment TEXT
   analyzed_at   TIMESTAMP
 
@@ -308,6 +309,35 @@ même dictionnaire : le dossier fonctionne aussi sans clé IA.
 Le dictionnaire est un choix éditorial assumé : il doit suivre les
 candidatures officielles et rester factuel dans ses libellés.
 
+### Recherche de sources et analyse en deux passes
+
+`services/sourcesService.js` approfondit le fact-check :
+
+1. la passe 1 du modèle extrait les affirmations (`fact_checks[].claim`) et
+   les mentions ;
+2. le backend recherche jusqu'à 4 requêtes : API Wikipédia FR (sans clé) et,
+   si `TAVILY_API_KEY` est définie, Tavily (recherche web) — jusqu'à 8
+   sources, chaque échec étant ignoré ;
+3. la passe 2 ré-analyse avec le bloc « Sources consultées » ; le modèle ne
+   peut citer que ces URL, et toute URL hors liste est rejetée à la
+   normalisation (`normalizeFactChecks` avec `allowedUrls`) ;
+4. les sources consultées sont stockées dans `analyses.sources` et exposées
+   dans la forme plate (`sources`), affichées sur la page détail.
+
+Si la passe 2 échoue, une tentative à température 0,2 précède le repli sur la
+passe 1 sans sources. `ANALYZE_WITH_SOURCES=false` coupe le pipeline. Le
+script `backend/scripts/regen-analyses.js` régénère toutes les analyses en
+base avec le pipeline courant (à lancer après un changement de prompt).
+
+### Historique et courbes
+
+`GET /api/tweets/historique?period=&bucket=day|week|month` agrège le score
+moyen par bucket (UTC, semaines commençant le lundi) avec une seconde série
+pour les tweets politiques. SQLite calcule les buckets en JavaScript,
+PostgreSQL via `date_trunc`. Le frontend trace ces points en SVG maison
+(`TrendChart.jsx`), sans dépendance de graphique : une courbe sur l'accueil
+et une dans le dossier élection.
+
 ### Seed de test
 
 `db/mock-data.js` lit `backend/mock/tweets.json`, trie les tweets et remplace leurs
@@ -358,6 +388,7 @@ scheduler.
 | `GET` | `/api/tweets/stats?period=` | `{period, avgScore, minScore, maxScore, totalAnalyzed, verdictDistribution}` |
 | `GET` | `/api/tweets/bullshitmetre?period=` | `{period, globalScore, level, sampleSize, timestamp}` |
 | `GET` | `/api/tweets/election?period=&limit=` | `{period, politicalCount, totalAnalyzed, avgPoliticalScore, mentions, tweets, updatedAt}` |
+| `GET` | `/api/tweets/historique?period=&bucket=day\|week\|month` | `{period, bucket, points, updatedAt}` — bucket inconnu : `400` |
 | `GET` | `/api/tweets/search?q=` | `{tweets, total}` |
 | `GET` | `/api/tweets/:id` | `{tweet}` ou `404` |
 | `POST` | `/api/tweets/analyze` | `{tweet}` si `tweet_id` existe, sinon `{analysis}` |
@@ -403,6 +434,7 @@ Forme de tweet plate :
   "reasoning": "…",
   "fact_checks": [],
   "mentions": [{ "label": "…", "type": "candidat", "stance": "neutre" }],
+  "sources": [{ "title": "…", "url": "…", "snippet": "…", "provider": "wikipedia" }],
   "humor_comment": "…",
   "analyzed_at": "2026-11-06T14:27:52.877Z"
 }

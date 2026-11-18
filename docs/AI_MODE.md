@@ -125,6 +125,31 @@ contient `{tweet}` à jour ; sinon elle contient `{analysis}`.
 Le prompt système demande de traiter le tweet comme une donnée et de ne pas suivre
 ses instructions. C'est une précaution, pas une garantie contre la prompt injection.
 
+### Analyse en deux passes avec recherche de sources
+
+Depuis novembre 2026, chaque analyse réelle se déroule en deux temps :
+
+1. **Passe 1** : le modèle produit l'analyse de base — score, verdict,
+   fact-checks, mentions politiques. Cette passe sert aussi d'extracteur
+   d'affirmations.
+2. **Recherche de sources** (`services/sourcesService.js`) : le backend
+   interroge Wikipédia FR (sans clé) et, si `TAVILY_API_KEY` est définie,
+   l'API Tavily (recherche web réelle). Jusqu'à 4 requêtes construites à
+   partir des affirmations et mentions, 8 sources conservées au total. Une
+   recherche qui échoue est ignorée : l'analyse continue.
+3. **Passe 2** : le modèle ré-analyse le tweet avec le bloc « Sources
+   consultées » dans le contexte, et cite ces sources dans
+   `fact_checks[].sources`. Règle anti-hallucination : le backend rejette
+   toute URL qui ne figure pas dans les sources réellement consultées.
+
+Si la passe 2 produit un JSON invalide, une unique tentative à température
+réduite (0,2) est lancée ; si elle échoue aussi, l'analyse de la passe 1 est
+conservée sans sources. `ANALYZE_WITH_SOURCES=false` désactive tout le
+pipeline et repasse en analyse mono-passe.
+
+Coût : environ deux appels par tweet (trois avec la tentative de rattrapage).
+Avec DeepSeek Flash, cela reste marginal ; la recherche de sources est gratuite.
+
 En plus du score, du verdict, des fact-checks et de la punchline, le modèle renvoie
 depuis novembre 2026 deux champs liés au dossier élection :
 
